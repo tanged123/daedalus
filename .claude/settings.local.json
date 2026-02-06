@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:search.nixos.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:machinezone.github.io)",
+      "Bash(nix eval:*)",
+      "WebFetch(domain:pthom.github.io)",
+      "Bash(nix-env -qaP:*)"
+    ]
+  }
+}
