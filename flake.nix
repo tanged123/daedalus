@@ -185,6 +185,7 @@
             gtest
             # Dev tools
             clang-tools
+            llvmPackages_latest.llvm # llvm-cov for coverage
             doxygen
             graphviz
             lcov
