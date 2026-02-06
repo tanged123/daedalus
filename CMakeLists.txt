@@ -4,7 +4,7 @@ project(
   VERSION 0.1.0
   LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -25,19 +25,28 @@ endif()
 # =============================================================================
 # Dependencies
 # =============================================================================
-find_package(glfw3 REQUIRED)
-find_package(OpenGL REQUIRED)
+
+# ImGui Bundle (from Nix derivation — includes Dear ImGui, Hello ImGui, ImPlot,
+# imgui-node-editor)
+find_package(imgui_bundle CONFIG REQUIRED)
+
+# IXWebSocket (source-only via FetchContent — not in nixpkgs)
+include(FetchContent)
+FetchContent_Declare(
+  ixwebsocket
+  GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+  GIT_TAG v11.4.6)
+set(USE_TLS
+    ON
+    CACHE BOOL "")
+set(USE_OPEN_SSL
+    ON
+    CACHE BOOL "")
+FetchContent_MakeAvailable(ixwebsocket)
+
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
-
-# libwebsockets (may need pkg-config or find_package depending on install)
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-  pkg_check_modules(LWS libwebsockets)
-endif()
-if(NOT LWS_FOUND)
-  find_package(Libwebsockets REQUIRED)
-endif()
+find_package(OpenGL REQUIRED)
 
 # =============================================================================
 # Main library
@@ -48,13 +57,8 @@ target_include_directories(daedalus_lib
                            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(
-  daedalus_lib PUBLIC glfw OpenGL::GL nlohmann_json::nlohmann_json
-                      Threads::Threads)
-
-if(LWS_FOUND)
-  target_include_directories(daedalus_lib PUBLIC ${LWS_INCLUDE_DIRS})
-  target_link_libraries(daedalus_lib PUBLIC ${LWS_LIBRARIES})
-endif()
+  daedalus_lib PUBLIC imgui_bundle::imgui_bundle ixwebsocket::ixwebsocket
+                      nlohmann_json::nlohmann_json OpenGL::GL Threads::Threads)
 
 # =============================================================================
 # Main executable

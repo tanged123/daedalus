@@ -12,7 +12,7 @@ Daedalus is a **high-density visualization client** that connects to Hermes (the
 
 **Core Views:**
 - **Signal Plotter**: Drag-and-drop signal visualization with ImPlot
-- **3D World View**: Vehicle position/attitude on Earth (osgEarth)
+- **3D World View**: Vehicle position/attitude on Earth (future phase — tech TBD)
 - **Topology View**: Module wiring diagram (imgui-node-editor)
 - **Console/Log**: Event stream, phase transitions, command history
 - **Inspect Mode**: Shadow execution subgraph rendering
@@ -21,7 +21,7 @@ Daedalus is a **high-density visualization client** that connects to Hermes (the
 - **Daedalus knows nothing about Icarus.** It speaks the Hermes protocol and visualizes generic signals.
 - **Protocol-Driven**: All data comes through the Hermes WebSocket protocol (JSON control + binary telemetry).
 - **Density-First**: Maximize information density in the UI. Futuristic mission control aesthetic.
-- **Portable**: Desktop (native) and browser (WASM) targets.
+- **Portable**: Desktop (native C++) first, with future browser (WASM) target in Phase 6.
 
 ## On Start - Required Reading
 
@@ -30,10 +30,11 @@ Daedalus is a **high-density visualization client** that connects to Hermes (the
 1. **Bootstrap Guide**: `docs/daedalus_bootstrap_guide.md`
    - Repository structure, Nix/CMake setup, script usage
    - Technology stack and dependency rationale
-   - Hermes protocol reference
+   - Hermes protocol reference (Section 9 — sourced from actual implementation)
+   - Data pipeline & threading model (Section 10)
 
-2. **Architecture Document**: Read the Daedalus section (Section 5) of the system architecture:
-   `docs/architecture/hermes_daedalus_architecture.md` (if present, or in the hermes repo)
+2. **Hermes Protocol Reference**: `references/hermes/docs/user_guide/websocket.md`
+   - The authoritative protocol specification. If the bootstrap guide and this file conflict, this file wins.
 
 ## Workflow: Beads (bd) & Global Sync
 
@@ -101,39 +102,63 @@ bd sync               # Sync with git
 
 **These rules are INVIOLABLE. Breaking them causes rendering glitches or crashes.**
 
-- **Never block the render thread**: WebSocket I/O and data parsing must happen on background threads.
-- **Double-buffer telemetry data**: Producer (network) and consumer (render) must not share raw pointers.
+- **Never block the render thread**: WebSocket I/O happens on IXWebSocket's background thread. Data reaches the render thread via lock-free SPSC queues.
+- **Double-buffer telemetry data**: Network thread writes to TelemetryQueue/EventQueue; render thread reads from them. No shared mutable state.
 - **Frame-rate independence**: All animations and scrolling must use delta-time, not frame count.
 
 ### 2. Hermes Protocol Compliance (MANDATORY)
 
-Daedalus is a client of the Hermes protocol. All communication follows:
+Daedalus is a client of the Hermes protocol. The authoritative spec is `references/hermes/docs/user_guide/websocket.md`.
 
-- **Control Channel** (JSON over WebSocket Text): Commands, events, schema
-- **Telemetry Channel** (Binary over WebSocket Binary): Signal values
+**Control Channel** (JSON over WebSocket Text):
+- Commands use `{"action": "..."}` format (NO `"type": "cmd"` wrapper)
+- Subscribe: `{"action": "subscribe", "params": {"signals": ["*"]}}`
+- Control: `{"action": "pause"}`, `{"action": "resume"}`, `{"action": "reset"}`
+- Set: `{"action": "set", "params": {"signal": "...", "value": ...}}`
+- Server responses have `"type"` field: `"schema"`, `"ack"`, `"event"`, `"error"`
+
+**Telemetry Channel** (Binary over WebSocket Binary):
+```
+Binary Telemetry Packet (24-byte header, little-endian):
+┌────────────┬────────────┬────────────┬───────────────┐
+│ Magic (4B) │ Frame (8B) │ Time (8B)  │ Count (4B)    │
+│ 0x48455254 │ uint64_le  │ float64_le │ uint32_le     │
+├────────────┴────────────┴────────────┴───────────────┤
+│ signal[0] (f64) │ signal[1] (f64) │ ... │ signal[N]  │
+└──────────────────────────────────────────────────────┘
+```
+
+- Always validate magic bytes (`0x48455254` = "HERT")
+- Signal order matches the order in the subscribe ack response
+
+### 3. Threading Model
 
 ```
-Binary Telemetry Packet:
-┌────────────┬────────────┬────────────┬────────────────────┐
-│ frame (u32)│ time (f64) │ count (u16)│ reserved (2 bytes) │
-├────────────┴────────────┴────────────┴────────────────────┤
-│ signal[0] (f64) │ signal[1] (f64) │ ... │ signal[N] (f64) │
-└───────────────────────────────────────────────────────────┘
+Network Thread (IXWebSocket)       →  SPSC Queues  →  Render Thread (ImGui)
+  Text frames → parse JSON              EventQueue       Poll each frame
+  Binary frames → validate magic      TelemetryQueue     Update SignalBuffers
+  Connection events                                       Render views
 ```
 
-### 3. ImGui Patterns
+- `TelemetryQueue`: lock-free SPSC ring for raw binary frames
+- `EventQueue`: lock-free SPSC ring for parsed JSON events
+- `SignalBuffer`: per-signal rolling history (render thread only)
+- `SignalTree`: hierarchical namespace (render thread only)
+- `SignalRegistry`: subscription index → SignalBuffer mapping (render thread only)
+
+### 4. ImGui Patterns
 
 - **ID Stack**: Always push unique IDs for repeated widgets. Use `PushID(i)` / `PopID()`.
 - **Window flags**: Prefer docked windows via Hello ImGui's docking API.
 - **ImPlot**: Use `ImPlot::SetNextAxesToFit()` for auto-scaling on first data.
 - **Layout persistence**: Use Hello ImGui's built-in layout save/restore.
 
-### 4. Coding Style & Standards
+### 5. Coding Style & Standards
 
-- **Language Standard**: C++17 (for broad compatibility including WASM).
+- **Language Standard**: C++20.
 - **Formatting**: Adhere to `treefmt` (clang-format) rules.
 - **Testing**: Write GoogleTest cases for protocol parsing, data structures, signal buffers.
-- **No raw `new`/`delete`**: Use `std::unique_ptr`, `std::shared_ptr`, RAII.
+- **No raw `new`/`delete`**: Use `std::unique_ptr`, `std::shared_ptr`, `std::span`, RAII.
 
 ## Project Structure
 
@@ -141,17 +166,18 @@ Binary Telemetry Packet:
 include/daedalus/
 ├── app.hpp            # Application lifecycle
 ├── protocol/          # Hermes protocol client
-│   ├── client.hpp     # WebSocket client
+│   ├── client.hpp     # WebSocket client (IXWebSocket)
 │   ├── schema.hpp     # Schema parsing
 │   └── telemetry.hpp  # Binary telemetry decoder
 ├── views/             # UI views
 │   ├── plotter.hpp    # Signal plotter (ImPlot)
-│   ├── world.hpp      # 3D world view (osgEarth)
 │   ├── topology.hpp   # Module topology (node editor)
-│   └── console.hpp    # Log/event console
+│   ├── console.hpp    # Log/event console
+│   └── world.hpp      # 3D world view (future)
 └── data/              # Data management
-    ├── signal_buffer.hpp  # Ring buffer for signal history
-    └── signal_tree.hpp    # Hierarchical signal browser
+    ├── signal_buffer.hpp    # Per-signal rolling history ring buffer
+    ├── signal_tree.hpp      # Hierarchical signal browser
+    └── telemetry_queue.hpp  # Lock-free SPSC inter-thread queue
 
 src/daedalus/
 ├── app.cpp
@@ -161,6 +187,7 @@ src/daedalus/
 
 tests/                 # Test suite
 docs/                  # Documentation
+references/hermes/     # Protocol docs + test examples
 ```
 
 ## Workflow Commands
@@ -184,22 +211,30 @@ cmake -B build -G Ninja && ninja -C build   # Build
 ctest --test-dir build --output-on-failure   # Test
 ```
 
+**Testing against live Hermes:**
+```bash
+# Terminal 1: Start mock simulation
+python -m hermes.cli.main run references/hermes/examples/websocket_telemetry.yaml
+
+# Terminal 2: Run Daedalus
+./scripts/build.sh && ./build/daedalus
+```
+
 ## Key Dependencies
 
-- **Hello ImGui / ImGui Bundle**: Windowing, docking, DPI
-- **ImPlot**: High-frequency signal plotting
-- **imgui-node-editor**: Topology/wiring visualization
-- **osgEarth**: Geospatial 3D rendering (Phase 4)
-- **libwebsockets**: WebSocket client for Hermes protocol
-- **nlohmann_json**: JSON parsing for control channel
+- **ImGui Bundle** (custom Nix derivation): Hello ImGui + Dear ImGui + ImPlot + imgui-node-editor
+- **IXWebSocket** (CMake FetchContent): WebSocket client with auto-reconnect
+- **nlohmann_json** (nixpkgs): JSON parsing for control channel
+- **GoogleTest** (nixpkgs): Unit and integration tests
 
 ## Quick Reference
 
 | Need | Use |
 |:-----|:----|
 | Parse JSON message | `nlohmann::json::parse(text)` |
-| Decode binary telemetry | `std::memcpy` from WebSocket binary frame |
+| Decode binary telemetry | Validate magic `0x48455254`, then `std::memcpy` header + `std::span` payload |
 | Signal ring buffer | `SignalBuffer::push(value)` / `SignalBuffer::data()` |
 | ImPlot line | `ImPlot::PlotLine(label, xs, ys, count)` |
-| WebSocket connect | `lws_client_connect_via_info(...)` |
+| WebSocket connect | `ix::WebSocket ws; ws.setUrl("ws://host:port"); ws.start();` |
 | Unique widget ID | `ImGui::PushID(i)` / `ImGui::PopID()` |
+| Run test data source | `python -m hermes.cli.main run references/hermes/examples/websocket_telemetry.yaml` |
