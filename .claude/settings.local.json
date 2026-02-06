@@ -15,7 +15,9 @@
       "Bash(bd update:*)",
       "Bash(nix develop:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nupdate deps to real stack: ImGui Bundle, IXWebSocket, C++20\n\nReplace placeholder dependencies \\(pkgs.imgui, pkgs.libwebsockets, C++17\\)\nwith the actual dependency stack:\n\n- ImGui Bundle v1.92.5: custom Nix derivation with fetchgit + fetchSubmodules,\n  GLFW3/OpenGL3 backend, freetype disabled \\(avoids plutovg FetchContent in\n  sandbox\\), broken upstream cmake configs replaced with clean INTERFACE target\n- IXWebSocket v11.4.6: CMake FetchContent \\(not in nixpkgs\\), TLS via OpenSSL\n- C++20 standard\n- shellHook exports CMAKE_PREFIX_PATH from NIXPKGS_CMAKE_PREFIX_PATH\n\nAll quality gates pass: nix develop, build.sh, test.sh, ci.sh.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nupdate deps to real stack: ImGui Bundle, IXWebSocket, C++20\n\nReplace placeholder dependencies \\(pkgs.imgui, pkgs.libwebsockets, C++17\\)\nwith the actual dependency stack:\n\n- ImGui Bundle v1.92.5: custom Nix derivation with fetchgit + fetchSubmodules,\n  GLFW3/OpenGL3 backend, freetype disabled \\(avoids plutovg FetchContent in\n  sandbox\\), broken upstream cmake configs replaced with clean INTERFACE target\n- IXWebSocket v11.4.6: CMake FetchContent \\(not in nixpkgs\\), TLS via OpenSSL\n- C++20 standard\n- shellHook exports CMAKE_PREFIX_PATH from NIXPKGS_CMAKE_PREFIX_PATH\n\nAll quality gates pass: nix develop, build.sh, test.sh, ci.sh.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(bd sync:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
