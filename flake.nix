@@ -162,6 +162,7 @@
         devShells.default = pkgs.mkShell.override { inherit stdenv; } {
           packages = [
             imgui-bundle
+            hermes.packages.${system}.hermes
           ]
           ++ (with pkgs; [
             # Build tools
@@ -200,6 +201,7 @@
             export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             echo "Daedalus dev environment loaded"
             echo "  - C++ compiler: $(c++ --version | head -1)"
+            echo "  - Hermes CLI:   $(hermes --version)"
           '';
         };
 

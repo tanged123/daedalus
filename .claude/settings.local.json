@@ -28,7 +28,8 @@
       "Bash(./scripts/test.sh:*)",
       "Bash(./build/daedalus_tests:*)",
       "Bash(bd close:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(nix flake show:*)"
     ]
   }
 }
