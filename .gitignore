@@ -58,6 +58,8 @@ cmake-build-*/
 # IDE
 .idea/
 .vscode/
+compile_commands.json
+.clangd
 
 # claude settings
 claude/

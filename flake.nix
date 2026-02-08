@@ -80,11 +80,14 @@
             rm -rf $out/lib/cmake
             mkdir -p $out/lib/cmake/imgui_bundle
 
-            # Collect all static libraries
-            LIBS=""
+            # Static libraries have circular dependencies (immapp ↔ imgui_md,
+            # hello_imgui ↔ imgui_tex_inspect). Use --start-group/--end-group
+            # to let the linker resolve cycles.
+            LIBS="-Wl,--start-group"
             for lib in $out/lib/*.a; do
               LIBS="$LIBS;$lib"
             done
+            LIBS="$LIBS;-Wl,--end-group"
 
             cat > $out/lib/cmake/imgui_bundle/imgui_bundleConfig.cmake << CMAKECFG
             if(TARGET imgui_bundle::imgui_bundle)
