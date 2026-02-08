@@ -29,7 +29,8 @@
       "Bash(./build/daedalus_tests:*)",
       "Bash(bd close:*)",
       "Bash(ls:*)",
-      "Bash(nix flake show:*)"
+      "Bash(nix flake show:*)",
+      "Bash(chmod:*)"
     ]
   }
 }
