@@ -74,6 +74,7 @@ target_link_libraries(daedalus PRIVATE daedalus_lib)
 # =============================================================================
 if(BUILD_TESTING)
   enable_testing()
+  include(GoogleTest)
   find_package(GTest REQUIRED)
 
   add_executable(
@@ -89,5 +90,5 @@ if(BUILD_TESTING)
   target_link_libraries(daedalus_tests PRIVATE daedalus_lib GTest::gtest
                                                GTest::gtest_main)
 
-  add_test(NAME daedalus_tests COMMAND daedalus_tests)
+  gtest_discover_tests(daedalus_tests)
 endif()
