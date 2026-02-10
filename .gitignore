@@ -68,5 +68,8 @@ claude/
 result
 result-*
 
+# Local runtime config
+Daedalus.ini
+
 # Do not ignore beads
 !.beads
