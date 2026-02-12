@@ -31,7 +31,11 @@
       "Bash(ls:*)",
       "Bash(nix flake show:*)",
       "Bash(chmod:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "WebFetch(domain:uxplanet.org)",
+      "WebFetch(domain:nasa.github.io)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:grafana.com)"
     ]
   }
 }
