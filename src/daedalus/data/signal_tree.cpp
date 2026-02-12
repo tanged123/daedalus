@@ -29,6 +29,13 @@ void SignalTree::build_from_schema(const protocol::Schema &schema) {
 }
 
 void SignalTree::update_subscription(const protocol::SubscribeAck &ack) {
+    for (auto &entry : path_index_) {
+        SignalTreeNode *node = entry.second;
+        if (node->is_leaf) {
+            node->signal_index.reset();
+        }
+    }
+
     for (size_t i = 0; i < ack.signals.size(); ++i) {
         auto it = path_index_.find(ack.signals[i]);
         if (it != path_index_.end()) {

@@ -1,7 +1,7 @@
 # Phase 1 Completion Plan: Skeleton + Protocol Client (MVP)
 
 > **Created**: 2026-02-08
-> **Branch**: `phase2_implementation` (continuation of Phase 1 work)
+> **Branch**: `phase1_cont` (continuation of Phase 1 work)
 > **Status**: Planning
 
 ---

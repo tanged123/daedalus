@@ -82,12 +82,13 @@
 
             # Static libraries have circular dependencies (immapp ↔ imgui_md,
             # hello_imgui ↔ imgui_tex_inspect). Use --start-group/--end-group
-            # to let the linker resolve cycles.
-            LIBS="-Wl,--start-group"
+            # on non-Darwin platforms to let GNU ld resolve cycles.
+            LIBS=""
+            ${if stdenv.hostPlatform.isDarwin then "" else ''LIBS="-Wl,--start-group"''}
             for lib in $out/lib/*.a; do
               LIBS="$LIBS;$lib"
             done
-            LIBS="$LIBS;-Wl,--end-group"
+            ${if stdenv.hostPlatform.isDarwin then "" else ''LIBS="$LIBS;-Wl,--end-group"''}
 
             cat > $out/lib/cmake/imgui_bundle/imgui_bundleConfig.cmake << CMAKECFG
             if(TARGET imgui_bundle::imgui_bundle)

@@ -6,9 +6,47 @@
 #include <immapp/immapp.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <string_view>
 
 namespace daedalus {
+
+namespace {
+
+[[nodiscard]] std::string to_lower_ascii(std::string_view input) {
+    std::string lowered(input);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered;
+}
+
+[[nodiscard]] bool node_matches_filter(const data::SignalTreeNode &node,
+                                       std::string_view normalized_filter) {
+    if (normalized_filter.empty()) {
+        return true;
+    }
+
+    const std::string lowered_name = to_lower_ascii(node.name);
+    if (lowered_name.find(normalized_filter) != std::string::npos) {
+        return true;
+    }
+
+    const std::string lowered_path = to_lower_ascii(node.full_path);
+    if (lowered_path.find(normalized_filter) != std::string::npos) {
+        return true;
+    }
+
+    for (const auto &child : node.children) {
+        if (node_matches_filter(*child, normalized_filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
 
 App::App() = default;
 App::~App() = default;
@@ -133,6 +171,7 @@ void App::handle_event(const std::string &json_str) {
             if (event == "disconnected") {
                 // Reset state for reconnection
                 schema_received_ = false;
+                subscribed_signals_.clear();
                 signal_buffers_.clear();
                 signal_tree_.clear();
             }
@@ -144,12 +183,14 @@ void App::handle_event(const std::string &json_str) {
 
 void App::process_telemetry() {
     std::vector<uint8_t> frame_data;
+    std::vector<double> value_storage;
     // Drain all queued telemetry frames this frame
     while (client_->telemetry_queue().try_pop(frame_data)) {
         protocol::TelemetryHeader hdr{};
         std::span<const double> values;
 
-        if (protocol::decode_frame(frame_data.data(), frame_data.size(), hdr, values)) {
+        if (protocol::decode_frame(frame_data.data(), frame_data.size(), hdr, values,
+                                   value_storage)) {
             for (uint32_t i = 0; i < hdr.count; ++i) {
                 auto it = signal_buffers_.find(i);
                 if (it != signal_buffers_.end()) {
@@ -162,8 +203,8 @@ void App::process_telemetry() {
 
 void App::render_connection_status() {
     auto state = client_->state();
-    ImVec4 color;
-    const char *label = nullptr;
+    ImVec4 color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+    const char *label = "Unknown";
 
     switch (state) {
     case protocol::ConnectionState::Connected:
@@ -181,6 +222,10 @@ void App::render_connection_status() {
     case protocol::ConnectionState::Error:
         color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
         label = "Error";
+        break;
+    default:
+        color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+        label = "Unknown";
         break;
     }
 
@@ -210,13 +255,16 @@ void App::render_signal_tree() {
     ImGui::InputTextWithHint("##filter", "Filter signals...", filter, sizeof(filter));
     ImGui::Separator();
 
+    const std::string normalized_filter = to_lower_ascii(std::string_view(filter));
     auto &root = signal_tree_.root();
     for (auto &child : root.children) {
-        render_signal_tree_node(*child);
+        if (node_matches_filter(*child, normalized_filter)) {
+            render_signal_tree_node(*child, normalized_filter);
+        }
     }
 }
 
-void App::render_signal_tree_node(const data::SignalTreeNode &node) {
+void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_view filter) {
     ImGui::PushID(node.full_path.c_str());
 
     if (node.is_leaf) {
@@ -239,7 +287,9 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node) {
         bool open = ImGui::TreeNodeEx(node.name.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
         if (open) {
             for (auto &child : node.children) {
-                render_signal_tree_node(*child);
+                if (node_matches_filter(*child, filter)) {
+                    render_signal_tree_node(*child, filter);
+                }
             }
             ImGui::TreePop();
         }

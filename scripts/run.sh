@@ -5,9 +5,6 @@
 # Usage: ./scripts/run.sh [config.yaml]
 #   Default config: references/hermes/examples/websocket_telemetry.yaml
 #   Icarus rocket:  ./scripts/run.sh references/hermes/examples/icarus_rocket.yaml
-
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG="${1:-$PROJECT_DIR/references/hermes/examples/websocket_telemetry.yaml}"

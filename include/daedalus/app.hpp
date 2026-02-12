@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace daedalus {
 
@@ -30,7 +31,7 @@ class App {
     /// UI rendering functions (called each frame).
     void render_connection_status();
     void render_signal_tree();
-    void render_signal_tree_node(const data::SignalTreeNode &node);
+    void render_signal_tree_node(const data::SignalTreeNode &node, std::string_view filter);
 
     /// Handle a parsed JSON event from the event queue.
     void handle_event(const std::string &json_str);

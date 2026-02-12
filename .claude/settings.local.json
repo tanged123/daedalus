@@ -30,7 +30,8 @@
       "Bash(bd close:*)",
       "Bash(ls:*)",
       "Bash(nix flake show:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(echo:*)"
     ]
   }
 }

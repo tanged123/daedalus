@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <new>
@@ -15,7 +16,8 @@ namespace daedalus::data {
 /// No mutexes — pure atomic acquire/release.
 template <typename T> class SPSCQueue {
   public:
-    explicit SPSCQueue(size_t capacity) : capacity_(capacity), buffer_(capacity) {}
+    explicit SPSCQueue(size_t capacity)
+        : capacity_(std::max<size_t>(capacity, 2)), buffer_(capacity_) {}
 
     /// Push an item (producer only). Returns false if full.
     bool try_push(T &&item) {

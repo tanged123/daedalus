@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -13,7 +14,7 @@ class SignalBuffer {
     static constexpr size_t kDefaultCapacity = 18000; // 5 min at 60 Hz
 
     explicit SignalBuffer(size_t capacity = kDefaultCapacity)
-        : capacity_(capacity), times_(capacity), values_(capacity) {}
+        : capacity_(std::max<size_t>(capacity, 1)), times_(capacity_), values_(capacity_) {}
 
     void push(double time, double value) {
         times_[write_pos_] = time;

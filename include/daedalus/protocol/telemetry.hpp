@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <vector>
 
 namespace daedalus::protocol {
 
@@ -19,14 +20,16 @@ struct TelemetryHeader {
 #pragma pack(pop)
 static_assert(sizeof(TelemetryHeader) == 24);
 
-/// Magic bytes: "HERT" in little-endian = 0x48455254
+/// ASCII "HERT" -> integer 0x48455254 (big-endian representation).
+/// On little-endian systems, this integer is laid out in memory as bytes
+/// 0x54 0x52 0x45 0x48 ("T", "R", "E", "H").
 inline constexpr uint32_t kTelemetryMagic = 0x48455254;
 
 /// Decode a binary telemetry frame.
 /// Returns true if the frame is valid (correct magic, sufficient length).
 /// On success, populates hdr and values.
 inline bool decode_frame(const uint8_t *data, size_t len, TelemetryHeader &hdr,
-                         std::span<const double> &values) {
+                         std::span<const double> &values, std::vector<double> &value_storage) {
     if (len < sizeof(TelemetryHeader)) {
         return false;
     }
@@ -37,15 +40,25 @@ inline bool decode_frame(const uint8_t *data, size_t len, TelemetryHeader &hdr,
         return false;
     }
 
-    const size_t expected_payload = hdr.count * sizeof(double);
-    if (len < sizeof(TelemetryHeader) + expected_payload) {
+    const size_t payload_bytes = len - sizeof(TelemetryHeader);
+    if (hdr.count > payload_bytes / sizeof(double)) {
         return false;
     }
+    const size_t expected_payload = hdr.count * sizeof(double);
 
-    values = std::span<const double>(
-        reinterpret_cast<const double *>(data + sizeof(TelemetryHeader)), hdr.count);
+    value_storage.resize(hdr.count);
+    if (expected_payload > 0) {
+        std::memcpy(value_storage.data(), data + sizeof(TelemetryHeader), expected_payload);
+    }
+    values = std::span<const double>(value_storage.data(), hdr.count);
 
     return true;
+}
+
+inline bool decode_frame(const uint8_t *data, size_t len, TelemetryHeader &hdr,
+                         std::span<const double> &values) {
+    thread_local std::vector<double> value_storage;
+    return decode_frame(data, len, hdr, values, value_storage);
 }
 
 } // namespace daedalus::protocol

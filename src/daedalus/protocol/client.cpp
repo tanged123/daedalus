@@ -92,8 +92,13 @@ void HermesClient::on_message(const ix::WebSocketMessagePtr &msg) {
 
     case ix::WebSocketMessageType::Error:
         state_.store(ConnectionState::Error, std::memory_order_relaxed);
-        event_queue_.try_push(R"({"type":"connection","event":"error","message":")" +
-                              msg->errorInfo.reason + "\"}");
+        {
+            nlohmann::json event;
+            event["type"] = "connection";
+            event["event"] = "error";
+            event["message"] = msg->errorInfo.reason;
+            event_queue_.try_push(event.dump());
+        }
         break;
 
     default:
