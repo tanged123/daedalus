@@ -58,10 +58,13 @@ trap cleanup EXIT INT TERM HUP
 hermes run "$CONFIG" &
 HERMES_PID="$!"
 
-# Wait for Hermes WebSocket port to be ready (up to 10s)
+# Wait for Hermes WebSocket port to be ready (up to 10s).
+# Check /proc/net/tcp to avoid connecting — a TCP probe triggers a
+# spurious "opening handshake failed" error in the WebSocket server.
+HERMES_PORT_HEX=$(printf '%04X' "$HERMES_PORT")
 echo "Waiting for Hermes on port $HERMES_PORT..."
 for i in $(seq 100); do
-    if (echo > "/dev/tcp/127.0.0.1/$HERMES_PORT") 2>/dev/null; then
+    if grep -q ":${HERMES_PORT_HEX} " /proc/net/tcp 2>/dev/null; then
         echo "Hermes ready."
         break
     fi

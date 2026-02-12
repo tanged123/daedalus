@@ -62,8 +62,10 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
 
     // Force X11 on WSL2/WSLg — GLFW 3.4 prefers Wayland when
     // WAYLAND_DISPLAY is set, but WSLg's Wayland EGL is unreliable.
+    // Unsetting WAYLAND_DISPLAY is the most reliable approach since
+    // Hello ImGui may override glfwInitHint during its own setup.
     if (std::getenv("WSL_DISTRO_NAME") != nullptr && std::getenv("GLFW_PLATFORM") == nullptr) {
-        glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+        unsetenv("WAYLAND_DISPLAY");
     }
 
     // Create Hermes client
