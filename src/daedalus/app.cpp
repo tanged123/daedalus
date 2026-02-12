@@ -294,6 +294,8 @@ void App::render_signal_tree() {
         return;
     }
 
+    const bool apply_tree_open_request = tree_open_state_request_.has_value();
+
     // Search filter
     static char filter[128] = "";
     ImGui::InputTextWithHint("##filter", "Filter signals...", filter, sizeof(filter));
@@ -305,6 +307,19 @@ void App::render_signal_tree() {
         if (node_matches_filter(*child, normalized_filter)) {
             render_signal_tree_node(*child, normalized_filter);
         }
+    }
+
+    if (ImGui::BeginPopupContextWindow("signal_tree_context", ImGuiPopupFlags_MouseButtonRight)) {
+        if (ImGui::MenuItem("Expand all trees")) {
+            tree_open_state_request_ = true;
+        }
+        if (ImGui::MenuItem("Collapse all trees")) {
+            tree_open_state_request_ = false;
+        }
+        ImGui::EndPopup();
+    }
+    if (apply_tree_open_request) {
+        tree_open_state_request_.reset();
     }
 }
 
@@ -345,6 +360,9 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
         }
     } else {
         // Internal node: expandable tree
+        if (tree_open_state_request_.has_value()) {
+            ImGui::SetNextItemOpen(tree_open_state_request_.value(), ImGuiCond_Always);
+        }
         bool open = ImGui::TreeNodeEx(node.name.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
         if (open) {
             for (auto &child : node.children) {

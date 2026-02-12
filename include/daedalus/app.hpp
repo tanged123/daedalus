@@ -8,6 +8,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -49,6 +50,7 @@ class App {
     views::PlotManager plot_manager_;
     std::string server_url_ = "ws://127.0.0.1:8765";
     bool schema_received_ = false;
+    std::optional<bool> tree_open_state_request_;
 };
 
 } // namespace daedalus
