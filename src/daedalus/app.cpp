@@ -70,6 +70,14 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
 
     // Create Hermes client
     client_ = std::make_unique<protocol::HermesClient>(server_url_);
+    plot_manager_.set_signal_unit_lookup(
+        [this](const std::string &signal_path) -> std::optional<std::string> {
+            const auto it = signal_units_.find(signal_path);
+            if (it == signal_units_.end()) {
+                return std::nullopt;
+            }
+            return it->second;
+        });
 
     // Set up Hello ImGui runner params
     HelloImGui::RunnerParams runner_params;
@@ -80,6 +88,8 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     runner_params.imGuiWindowParams.defaultImGuiWindowType =
         HelloImGui::DefaultImGuiWindowType::ProvideFullScreenDockSpace;
     runner_params.imGuiWindowParams.showMenuBar = true;
+    runner_params.imGuiWindowParams.showMenu_App = false;
+    runner_params.imGuiWindowParams.showMenu_View = false;
     runner_params.imGuiWindowParams.showStatusBar = true;
 
     // Disable idling — we have live telemetry streaming
@@ -106,7 +116,12 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     signal_tree_window.dockSpaceName = "SignalTreeSpace";
     signal_tree_window.GuiFunction = [this] { render_signal_tree(); };
 
-    runner_params.dockingParams.dockableWindows = {signal_tree_window};
+    HelloImGui::DockableWindow plots_window;
+    plots_window.label = "Plots";
+    plots_window.dockSpaceName = "MainDockSpace";
+    plots_window.GuiFunction = [this] { render_plot_workspace(); };
+
+    runner_params.dockingParams.dockableWindows = {signal_tree_window, plots_window};
 
     // Status bar: connection status
     runner_params.callbacks.ShowStatus = [this] { render_connection_status(); };
@@ -147,6 +162,15 @@ void App::handle_event(const std::string &json_str) {
         if (type == "schema") {
             current_schema_ = protocol::parse_schema(msg);
             signal_tree_.build_from_schema(current_schema_);
+            signal_units_.clear();
+            for (const auto &module : current_schema_.modules) {
+                for (const auto &signal : module.signals) {
+                    if (!signal.unit.has_value()) {
+                        continue;
+                    }
+                    signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
+                }
+            }
             schema_received_ = true;
 
             // Auto-subscribe to all signals
@@ -166,6 +190,7 @@ void App::handle_event(const std::string &json_str) {
                 for (size_t i = 0; i < ack.signals.size(); ++i) {
                     signal_buffers_.emplace(i, data::SignalBuffer{});
                 }
+                plot_manager_.clear_panel_signals();
 
                 std::printf("[Daedalus] Subscribed to %u signals\n", ack.count);
 
@@ -189,7 +214,9 @@ void App::handle_event(const std::string &json_str) {
                 schema_received_ = false;
                 subscribed_signals_.clear();
                 signal_buffers_.clear();
+                signal_units_.clear();
                 signal_tree_.clear();
+                plot_manager_.clear_panel_signals();
             }
         }
     } catch (const std::exception &e) {
@@ -213,6 +240,7 @@ void App::process_telemetry() {
                     it->second.push(hdr.time, values[i]);
                 }
             }
+            plot_manager_.set_current_time(hdr.time);
         }
     }
 }
@@ -290,6 +318,23 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
                                         ImGuiTreeNodeFlags_SpanAvailWidth;
         ImGui::TreeNodeEx(node.name.c_str(), leaf_flags);
 
+        // Drag source + double-click quick-add for plotting.
+        if (node.signal_index.has_value()) {
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
+                views::DragDropSignalPayload payload{};
+                payload.buffer_index = node.signal_index.value();
+                std::snprintf(payload.label, sizeof(payload.label), "%s", node.full_path.c_str());
+                ImGui::SetDragDropPayload(views::kDndSignalPayloadType, &payload, sizeof(payload));
+                ImGui::TextUnformatted(node.full_path.c_str());
+                ImGui::EndDragDropSource();
+            }
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                plot_manager_.add_signal_to_active_or_new_panel(node.signal_index.value(),
+                                                                node.full_path);
+            }
+        }
+
         // Show current value on the same line
         if (node.signal_index.has_value()) {
             auto it = signal_buffers_.find(node.signal_index.value());
@@ -312,6 +357,11 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
     }
 
     ImGui::PopID();
+}
+
+void App::render_plot_workspace() {
+    plot_manager_.render_toolbar();
+    plot_manager_.render(signal_buffers_);
 }
 
 } // namespace daedalus

@@ -2,7 +2,7 @@
 
 > **Created**: 2026-02-12
 > **Branch**: `phase2`
-> **Status**: Planning
+> **Status**: In Progress
 > **Depends on**: Phase 1 (complete)
 
 ---
@@ -145,7 +145,7 @@ This gives synchronized real-time views with per-panel override capability.
 
 ## 4. Implementation Steps
 
-### Step 1: PlotPanel Data Model
+### Step 1: PlotPanel Data Model [x]
 
 **Files**: `include/daedalus/views/plotter.hpp`
 
@@ -208,7 +208,7 @@ struct PlotPanel {
 
 ---
 
-### Step 2: PlotManager + Panel Lifecycle
+### Step 2: PlotManager + Panel Lifecycle [x]
 
 **Files**: `include/daedalus/views/plotter.hpp` (extend), `src/daedalus/views/plotter.cpp`
 
@@ -282,7 +282,7 @@ class PlotManager {
 
 ---
 
-### Step 3: Core Plot Rendering (Scrolling Time-Series)
+### Step 3: Core Plot Rendering (Scrolling Time-Series) [x]
 
 **Files**: `src/daedalus/views/plotter.cpp`
 
@@ -367,7 +367,7 @@ void PlotManager::render_panel(PlotPanel& panel,
 
 ---
 
-### Step 4: Drag-and-Drop from Signal Tree
+### Step 4: Drag-and-Drop from Signal Tree [x]
 
 **Files**: `src/daedalus/app.cpp` (modify `render_signal_tree_node`)
 
@@ -433,7 +433,7 @@ void App::render_signal_tree_node(const data::SignalTreeNode& node, std::string_
 
 ---
 
-### Step 5: Plot Toolbar + Panel Management
+### Step 5: Plot Toolbar + Panel Management [x]
 
 **Files**: `src/daedalus/views/plotter.cpp`, `src/daedalus/app.cpp`
 
@@ -481,7 +481,7 @@ Right-click on the plot area opens a context menu:
 
 ---
 
-### Step 6: Multiple Y-Axes
+### Step 6: Multiple Y-Axes [x]
 
 **Files**: `src/daedalus/views/plotter.cpp` (enhance `render_panel`)
 
@@ -507,7 +507,7 @@ ImPlot::SetupAxes("Time (s)", y1_label.c_str());
 
 ---
 
-### Step 7: Cursors and Statistics Overlay
+### Step 7: Cursors and Statistics Overlay [x]
 
 **Files**: `src/daedalus/views/plotter.cpp` (enhance `render_panel`)
 
@@ -557,7 +557,7 @@ Statistics are computed over the **visible time window** only (not the entire bu
 
 ---
 
-### Step 8: App Integration + Docking Layout
+### Step 8: App Integration + Docking Layout [x]
 
 **Files**: `include/daedalus/app.hpp`, `src/daedalus/app.cpp`
 
@@ -628,7 +628,7 @@ void App::process_telemetry() {
 
 ---
 
-### Step 9: End-to-End Verification
+### Step 9: End-to-End Verification [ ]
 
 **No new files** — manual verification.
 
@@ -659,7 +659,9 @@ void App::process_telemetry() {
    - [ ] ~90 signals load in tree
    - [ ] Can plot 10+ signals across multiple panels without frame drops
 5. Run tests: `./scripts/test.sh` — all pass (Phase 1 + Phase 2 tests)
+   - [x] `./scripts/test.sh` passes
 6. Run CI: `./scripts/ci.sh` — clean build + all tests
+   - [x] `./scripts/ci.sh` passes
 
 **Acceptance**: Full Phase 2 feature set works end-to-end against live Hermes data.
 
@@ -714,7 +716,7 @@ add_executable(daedalus_tests
 )
 ```
 
-The ImPlot headers are already available via ImGui Bundle (`addons.withImplot = true` in `app.cpp`). The `#include <implot.h>` is provided by the `imgui_bundle::imgui_bundle` CMake target.
+The ImPlot headers are already available via ImGui Bundle (`addons.withImplot = true` in `app.cpp`). The `#include <implot/implot.h>` header is provided by the `imgui_bundle::imgui_bundle` CMake target.
 
 ---
 
@@ -831,21 +833,21 @@ Full interactive testing against live Hermes data with both `websocket_telemetry
 
 ## 11. Phase 2 Definition of Done
 
-- [ ] `PlotPanel` and `PlotManager` data model implemented with tests
-- [ ] Zero-copy `PlotLineG` rendering with signal getter
-- [ ] Drag-and-drop from signal tree to plot panels
-- [ ] Scrolling time-series with `ImPlotCond_Always` X-axis
-- [ ] Y-axis auto-fit with `AutoFit | RangeFit`
-- [ ] Multiple Y-axes (Y1, Y2, Y3) with independent scaling
-- [ ] Draggable vertical cursor with value readouts
-- [ ] Statistics overlay (min/max/mean/current)
-- [ ] Panel creation/deletion via toolbar
-- [ ] Panel context menu (remove signal, assign axis, toggle features)
-- [ ] Live/paused mode toggle
-- [ ] History duration slider
-- [ ] Dockable plot panels (rearrangeable via HelloImGui)
-- [ ] All Phase 1 tests still pass (no regressions)
-- [ ] ~14 new unit tests for Phase 2 data model
-- [ ] `./scripts/ci.sh` passes (clean build + all tests)
+- [x] `PlotPanel` and `PlotManager` data model implemented with tests
+- [x] Zero-copy `PlotLineG` rendering with signal getter
+- [x] Drag-and-drop from signal tree to plot panels
+- [x] Scrolling time-series with `ImPlotCond_Always` X-axis
+- [x] Y-axis auto-fit with `AutoFit | RangeFit`
+- [x] Multiple Y-axes (Y1, Y2, Y3) with independent scaling
+- [x] Draggable vertical cursor with value readouts
+- [x] Statistics overlay (min/max/mean/current)
+- [x] Panel creation/deletion via toolbar
+- [x] Panel context menu (remove signal, assign axis, toggle features)
+- [x] Live/paused mode toggle
+- [x] History duration slider
+- [x] Dockable plot panels (rearrangeable via HelloImGui)
+- [x] All Phase 1 tests still pass (no regressions)
+- [x] ~14 new unit tests for Phase 2 data model
+- [x] `./scripts/ci.sh` passes (clean build + all tests)
 - [ ] End-to-end verification against live Hermes data
 - [ ] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)
