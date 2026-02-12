@@ -80,11 +80,15 @@
             rm -rf $out/lib/cmake
             mkdir -p $out/lib/cmake/imgui_bundle
 
-            # Collect all static libraries
+            # Static libraries have circular dependencies (immapp ↔ imgui_md,
+            # hello_imgui ↔ imgui_tex_inspect). Use --start-group/--end-group
+            # on non-Darwin platforms to let GNU ld resolve cycles.
             LIBS=""
+            ${if stdenv.hostPlatform.isDarwin then "" else ''LIBS="-Wl,--start-group"''}
             for lib in $out/lib/*.a; do
               LIBS="$LIBS;$lib"
             done
+            ${if stdenv.hostPlatform.isDarwin then "" else ''LIBS="$LIBS;-Wl,--end-group"''}
 
             cat > $out/lib/cmake/imgui_bundle/imgui_bundleConfig.cmake << CMAKECFG
             if(TARGET imgui_bundle::imgui_bundle)
@@ -159,6 +163,7 @@
         devShells.default = pkgs.mkShell.override { inherit stdenv; } {
           packages = [
             imgui-bundle
+            hermes.packages.${system}.hermes
           ]
           ++ (with pkgs; [
             # Build tools
@@ -197,6 +202,7 @@
             export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             echo "Daedalus dev environment loaded"
             echo "  - C++ compiler: $(c++ --version | head -1)"
+            echo "  - Hermes CLI:   $(hermes --version)"
           '';
         };
 

@@ -58,6 +58,8 @@ cmake-build-*/
 # IDE
 .idea/
 .vscode/
+compile_commands.json
+.clangd
 
 # claude settings
 claude/
@@ -65,6 +67,9 @@ claude/
 # Nix
 result
 result-*
+
+# Local runtime config
+Daedalus.ini
 
 # Do not ignore beads
 !.beads

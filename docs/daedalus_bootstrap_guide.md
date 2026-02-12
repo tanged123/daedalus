@@ -148,6 +148,7 @@ All repositories in the Pantheon (Janus, Vulcan, Icarus, Hermes, Daedalus) share
 ### GitHub Actions Pattern
 
 All workflows share this preamble:
+
 ```yaml
 steps:
   - uses: actions/checkout@v4
@@ -259,6 +260,7 @@ daedalus → hermes → icarus → {janus, vulcan, nixpkgs}
 ```
 
 The `flake.nix` declares:
+
 - `hermes` as a flake input (provides the `hermes` CLI for test data + protocol reference)
 - `nixpkgs.follows = "hermes/nixpkgs"` to ensure consistent package versions
 - `treefmt-nix` for code formatting
@@ -267,6 +269,7 @@ The `flake.nix` declares:
 ### Dev Shell
 
 The dev shell provides:
+
 - C++ compiler (LLVM/Clang via `llvmPackages_latest`)
 - CMake + Ninja build system
 - System-level dependencies for ImGui Bundle (OpenGL, GLFW, X11/Wayland, freetype)
@@ -307,6 +310,7 @@ imgui-bundle = stdenv.mkDerivation {
 ```
 
 This gives us a single Nix-cached dependency that provides:
+
 - Dear ImGui (with docking)
 - Hello ImGui (windowing, DPI, layout persistence)
 - ImPlot (signal plotting)
@@ -442,6 +446,7 @@ This section documents the **actual** Hermes WebSocket protocol as implemented. 
 ### 9.1 Control Channel (JSON over WebSocket Text)
 
 **Schema (Server → Client, sent immediately on connect):**
+
 ```json
 {
   "type": "schema",
@@ -466,6 +471,7 @@ This section documents the **actual** Hermes WebSocket protocol as implemented. 
 Note: Signals are an **array of objects** (not an object-of-objects). Each signal has `name`, `type`, and optionally `unit`.
 
 **Commands (Client → Server):**
+
 ```json
 {"action": "subscribe", "params": {"signals": ["*"]}}
 {"action": "subscribe", "params": {"signals": ["rocket.position.*"]}}
@@ -479,6 +485,7 @@ Note: Signals are an **array of objects** (not an object-of-objects). Each signa
 Note: Commands use `{"action": "..."}` at the top level — there is no `"type": "cmd"` wrapper.
 
 **Acknowledgments (Server → Client):**
+
 ```json
 {"type": "ack", "action": "subscribe", "count": 4, "signals": ["rocket.position.x", "rocket.position.y", "rocket.velocity.x", "rocket.velocity.y"]}
 {"type": "ack", "action": "pause"}
@@ -490,6 +497,7 @@ Note: Commands use `{"action": "..."}` at the top level — there is no `"type":
 The subscribe ack is especially important: it returns the **resolved signal list in order**. This order determines the binary telemetry payload layout.
 
 **Events (Server → Client):**
+
 ```json
 {"type": "event", "event": "paused"}
 {"type": "event", "event": "running"}
@@ -497,6 +505,7 @@ The subscribe ack is especially important: it returns the **resolved signal list
 ```
 
 **Errors (Server → Client):**
+
 ```json
 {"type": "error", "message": "Unknown signal: foo.bar"}
 {"type": "error", "message": "Invalid JSON"}
@@ -618,6 +627,7 @@ Older data can be decimated (e.g., keep every Nth sample beyond 1 minute) to ext
 Since Hermes is a Nix flake input, it is available in the dev shell. You can run real simulations that stream telemetry to Daedalus over WebSocket.
 
 **Terminal 1 — Start a Hermes simulation:**
+
 ```bash
 # Simple mock vehicle (4 signals, sinusoidal data)
 python -m hermes.cli.main run references/hermes/examples/websocket_telemetry.yaml
@@ -627,6 +637,7 @@ python -m hermes.cli.main run references/hermes/examples/icarus_rocket.yaml
 ```
 
 **Terminal 2 — Run Daedalus:**
+
 ```bash
 ./scripts/build.sh && ./build/daedalus
 ```
@@ -748,6 +759,7 @@ Covers C++ build artifacts, IDE files, logs, Nix results, and build directories.
 ### .gitattributes
 
 Configures the beads merge driver:
+
 ```
 .beads/issues.jsonl merge=beads
 ```
@@ -755,6 +767,7 @@ Configures the beads merge driver:
 ### Pre-commit Hook
 
 Located at `.github/hooks/pre-commit`, installed via `./scripts/install-hooks.sh`:
+
 ```bash
 nix fmt
 git add -u
@@ -763,6 +776,7 @@ git add -u
 ### References Submodule
 
 Hermes is included as a reference submodule for protocol documentation and test examples:
+
 ```bash
 git submodule add https://github.com/tanged123/hermes.git references/hermes
 ```
@@ -779,8 +793,8 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 - [x] Scripts directory (full set)
 - [x] CI/CD workflows
 - [x] Agent rules
-- [ ] ImGui Bundle custom Nix derivation + CMake integration
-- [ ] IXWebSocket FetchContent integration
+- [x] ImGui Bundle custom Nix derivation + CMake integration
+- [x] IXWebSocket FetchContent integration
 - [ ] Connect to Hermes, receive schema, parse into SignalTree
 - [ ] Binary telemetry decoder (validate against `websocket_telemetry.yaml`)
 - [ ] TelemetryQueue (SPSC lock-free ring buffer)
@@ -838,6 +852,7 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 After bootstrapping, verify the following:
 
 ### Structure
+
 - [ ] `flake.nix` exists and `nix flake check` passes
 - [ ] `CMakeLists.txt` exists with `project(daedalus VERSION 0.1.0)`
 - [ ] `include/daedalus/app.hpp` exists
@@ -845,6 +860,7 @@ After bootstrapping, verify the following:
 - [ ] `tests/test_main.cpp` exists with placeholder test
 
 ### Scripts
+
 - [ ] All scripts in `scripts/` are executable (`chmod +x`)
 - [ ] `./scripts/dev.sh` enters Nix dev shell
 - [ ] `./scripts/build.sh` builds successfully
@@ -854,6 +870,7 @@ After bootstrapping, verify the following:
 - [ ] `./scripts/install-hooks.sh` installs pre-commit hook
 
 ### CI/CD
+
 - [ ] `.github/workflows/ci.yml` exists
 - [ ] `.github/workflows/format.yml` exists
 - [ ] `.github/workflows/docs.yml` exists
@@ -861,20 +878,24 @@ After bootstrapping, verify the following:
 - [ ] `.github/hooks/pre-commit` exists and is executable
 
 ### Agent Infrastructure
+
 - [ ] `CLAUDE.md` points to `.agent/rules/daedalus.md`
 - [ ] `AGENTS.md` documents beads workflow
 - [ ] `.agent/rules/daedalus.md` has `trigger: always_on`
 
 ### Git
+
 - [ ] `.gitignore` covers C++ artifacts, logs, build, Nix results
 - [ ] `.gitattributes` configures beads merge driver
 - [ ] `Doxyfile` configured for C++ (`.hpp`, `.cpp`, `.md`)
 - [ ] `references/hermes` submodule present and initialized
 
 ### Documentation
+
 - [ ] `README.md` with project overview and quick start
 - [ ] `docs/daedalus_bootstrap_guide.md` (this file)
 
 ### Development Data Source
+
 - [ ] `python -m hermes.cli.main run references/hermes/examples/websocket_telemetry.yaml` starts successfully
 - [ ] `python references/hermes/examples/websocket_client.py` connects and receives telemetry
