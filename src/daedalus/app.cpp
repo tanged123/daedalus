@@ -1,6 +1,7 @@
 #include "daedalus/app.hpp"
 #include "daedalus/protocol/telemetry.hpp"
 
+#include <GLFW/glfw3.h>
 #include <hello_imgui/hello_imgui.h>
 #include <imgui.h>
 #include <immapp/immapp.h>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <string_view>
 
 namespace daedalus {
@@ -52,6 +54,18 @@ App::App() = default;
 App::~App() = default;
 
 int App::run(int /*argc*/, char * /*argv*/[]) {
+    // Register GLFW error callback before initialization for diagnostics.
+    // This is safe to call before glfwInit() (Hello ImGui handles that).
+    glfwSetErrorCallback([](int error, const char *description) {
+        std::fprintf(stderr, "[GLFW Error %d] %s\n", error, description);
+    });
+
+    // Force X11 on WSL2/WSLg — GLFW 3.4 prefers Wayland when
+    // WAYLAND_DISPLAY is set, but WSLg's Wayland EGL is unreliable.
+    if (std::getenv("WSL_DISTRO_NAME") != nullptr && std::getenv("GLFW_PLATFORM") == nullptr) {
+        glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+    }
+
     // Create Hermes client
     client_ = std::make_unique<protocol::HermesClient>(server_url_);
 
