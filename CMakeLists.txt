@@ -43,6 +43,11 @@ set(USE_OPEN_SSL
     ON
     CACHE BOOL "")
 FetchContent_MakeAvailable(ixwebsocket)
+if(TARGET ixwebsocket)
+  target_compile_options(
+    ixwebsocket PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-parameter>
+                        $<$<CXX_COMPILER_ID:GNU>:-Wno-unused-parameter>)
+endif()
 
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)

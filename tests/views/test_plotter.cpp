@@ -105,3 +105,116 @@ TEST(PlotManager, AddSignalToActiveOrNewPanelCreatesPanel) {
     ASSERT_EQ(manager.panel(0).signals.size(), 1u);
     EXPECT_EQ(manager.panel(0).signals[0].buffer_index, 3u);
 }
+
+TEST(PlotManager, AddSignalToPanelRejectsInvalidPanelIndex) {
+    PlotManager manager;
+    EXPECT_FALSE(manager.add_signal_to_panel(99, 1, "vehicle.accel.x"));
+}
+
+TEST(PlotManager, AddSignalToPanelRejectsDuplicatesInSamePanel) {
+    PlotManager manager;
+    const size_t panel_index = manager.create_panel();
+    EXPECT_TRUE(manager.add_signal_to_panel(panel_index, 1, "vehicle.att.roll"));
+    EXPECT_FALSE(manager.add_signal_to_panel(panel_index, 1, "vehicle.att.roll"));
+}
+
+TEST(PlotManager, AddSignalToPanelEnablesAuxAxesAndTracksActivePanel) {
+    PlotManager manager;
+    const size_t panel_index = manager.create_panel();
+
+    EXPECT_TRUE(manager.add_signal_to_panel(panel_index, 1, "vehicle.att.roll", ImAxis_Y2));
+    EXPECT_TRUE(manager.add_signal_to_panel(panel_index, 2, "vehicle.att.yaw", ImAxis_Y3));
+
+    const auto &panel = manager.panel(panel_index);
+    EXPECT_TRUE(panel.show_y2);
+    EXPECT_TRUE(panel.show_y3);
+    ASSERT_TRUE(manager.active_panel_index().has_value());
+    EXPECT_EQ(*manager.active_panel_index(), panel_index);
+}
+
+TEST(PlotManager, ClearPanelSignalsClearsAssignmentsAndAuxAxes) {
+    PlotManager manager;
+    const size_t panel_index = manager.create_panel();
+    ASSERT_TRUE(manager.add_signal_to_panel(panel_index, 1, "vehicle.pos.x", ImAxis_Y2));
+    ASSERT_TRUE(manager.add_signal_to_panel(panel_index, 2, "vehicle.pos.y", ImAxis_Y3));
+
+    manager.clear_panel_signals();
+
+    const auto &panel = manager.panel(panel_index);
+    EXPECT_TRUE(panel.signals.empty());
+    EXPECT_FALSE(panel.show_y2);
+    EXPECT_FALSE(panel.show_y3);
+}
+
+TEST(PlotManager, SetAllLiveReenablesPanelsAndResetsCursorTime) {
+    PlotManager manager;
+    manager.set_current_time(42.0);
+    const size_t panel_index = manager.create_panel();
+    auto &panel = manager.panel(panel_index);
+    panel.live_mode = false;
+    panel.cursor_time = 0.0;
+
+    manager.set_all_live();
+
+    EXPECT_TRUE(panel.live_mode);
+    EXPECT_DOUBLE_EQ(panel.cursor_time, 42.0);
+}
+
+TEST(PlotManager, RemovePanelUpdatesActivePanelIndex) {
+    PlotManager manager;
+    manager.create_panel(); // 0
+    manager.create_panel(); // 1
+    manager.create_panel(); // 2 (active)
+    ASSERT_TRUE(manager.active_panel_index().has_value());
+    EXPECT_EQ(*manager.active_panel_index(), 2u);
+
+    manager.remove_panel(1);
+    ASSERT_TRUE(manager.active_panel_index().has_value());
+    EXPECT_EQ(*manager.active_panel_index(), 1u);
+
+    manager.remove_panel(1);
+    EXPECT_FALSE(manager.active_panel_index().has_value());
+}
+
+TEST(PlotManager, RemovePanelOutOfRangeIsNoOp) {
+    PlotManager manager;
+    manager.create_panel();
+    manager.remove_panel(99);
+    EXPECT_EQ(manager.panel_count(), 1u);
+}
+
+TEST(PlotManager, ClearResetsPanelIdCounter) {
+    PlotManager manager;
+    manager.create_panel();
+    manager.create_panel();
+    manager.clear();
+    const size_t index = manager.create_panel();
+    EXPECT_EQ(index, 0u);
+    EXPECT_EQ(manager.panel(0).id, "Plot 0");
+}
+
+TEST(PlotManager, CreatePanelUsesProvidedTitle) {
+    PlotManager manager;
+    const size_t index = manager.create_panel("Attitude");
+    EXPECT_EQ(manager.panel(index).title, "Attitude");
+}
+
+TEST(PlotManager, AddSignalToActivePanelDoesNotCreateExtraPanel) {
+    PlotManager manager;
+    const size_t first = manager.create_panel();
+    EXPECT_TRUE(manager.add_signal_to_active_or_new_panel(3, "vehicle.velocity.x"));
+    EXPECT_TRUE(manager.add_signal_to_active_or_new_panel(4, "vehicle.velocity.y"));
+    EXPECT_EQ(manager.panel_count(), 1u);
+    EXPECT_EQ(manager.panel(first).signals.size(), 2u);
+}
+
+TEST(PlotManager, CanSetSignalUnitLookupCallback) {
+    PlotManager manager;
+    manager.set_signal_unit_lookup([](const std::string &label) -> std::optional<std::string> {
+        if (label == "vehicle.position.x") {
+            return "m";
+        }
+        return std::nullopt;
+    });
+    SUCCEED();
+}

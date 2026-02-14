@@ -159,3 +159,20 @@ TEST(SignalBuffer, VisibleRangeWithNoOverlap) {
     EXPECT_EQ(start, 2u);
     EXPECT_EQ(count, 1u);
 }
+
+TEST(SignalBuffer, VisibleRangeEmptyBuffer) {
+    SignalBuffer buf(8);
+    const auto [start, count] = buf.visible_range(0.0, 1.0);
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(count, 0u);
+}
+
+TEST(SignalBuffer, VisibleRangeInvalidWindow) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+
+    const auto [start, count] = buf.visible_range(5.0, 2.0);
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(count, 0u);
+}

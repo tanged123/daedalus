@@ -8,6 +8,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace daedalus::views {
@@ -428,6 +429,7 @@ void PlotManager::render_panel(size_t index, PlotPanel &panel,
     ImVec2 plot_size{0.0f, 0.0f};
     double x_min = current_time_ - static_cast<double>(panel.history_seconds);
     double x_max = current_time_;
+    std::unordered_map<size_t, ImVec4> signal_colors;
 
     if (ImPlot::BeginPlot("##plot", ImVec2(-1.0f, panel.plot_height))) {
         panel.show_y2 = panel.show_y2 || panel.has_signals_on(ImAxis_Y2);
@@ -485,6 +487,7 @@ void PlotManager::render_panel(size_t index, PlotPanel &panel,
             ImPlot::SetAxes(ImAxis_X1, sig.y_axis);
             ImPlot::PlotLineG(sig.label.c_str(), signal_getter, &ctx,
                               static_cast<int>(visible_count));
+            signal_colors[sig.buffer_index] = ImPlot::GetLastItemColor();
         }
 
         if (panel.show_cursor) {
@@ -501,7 +504,12 @@ void PlotManager::render_panel(size_t index, PlotPanel &panel,
                     continue;
                 }
                 const double interpolated = interpolate_at_time(it->second, panel.cursor_time);
-                ImPlot::Annotation(panel.cursor_time, interpolated, ImPlot::GetLastItemColor(),
+                const auto color_it = signal_colors.find(sig.buffer_index);
+                const ImVec4 annotation_color = color_it != signal_colors.end()
+                                                    ? color_it->second
+                                                    : ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+                ImPlot::SetAxes(ImAxis_X1, sig.y_axis);
+                ImPlot::Annotation(panel.cursor_time, interpolated, annotation_color,
                                    ImVec2(10.0f, 0.0f), true, "%s: %.4f", sig.label.c_str(),
                                    interpolated);
             }

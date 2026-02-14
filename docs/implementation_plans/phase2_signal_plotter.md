@@ -63,9 +63,9 @@ tests/views/
 ### 2.3 Modified Files
 
 ```
-include/daedalus/app.hpp          # Add PlotManager member, new render methods
-src/daedalus/app.cpp              # Wire drag-drop sources, register plot windows, add toolbar
-include/daedalus/data/signal_buffer.hpp  # Add binary_search_time() for viewport culling
+include/daedalus/app.hpp          # Add PlotManager member and render_plot_workspace()
+src/daedalus/app.cpp              # Wire drag-drop sources and render_plot_workspace()
+include/daedalus/data/signal_buffer.hpp  # Add lower_bound_time()/upper_bound_time() for viewport culling
 ```
 
 ---
@@ -97,11 +97,16 @@ When the user zooms into a 2-second window of a 5-minute history, plotting all 1
 **Solution**: Binary search on the time array to find the visible range, then pass only that subset to `PlotLineG`:
 
 ```cpp
-// Find first sample index where time >= t_min
-size_t find_first_from(double t_min) const;
+// Find first sample index where time >= x_min
+size_t lower_bound_time(double x_min) const;
+
+// Find first sample index where time > x_max
+size_t upper_bound_time(double x_max) const;
 
 // In render: only plot visible range
-auto [vis_start, vis_count] = find_visible_range(buffer, x_min, x_max);
+size_t vis_start = buffer.lower_bound_time(x_min);
+size_t vis_end = buffer.upper_bound_time(x_max);
+size_t vis_count = vis_end > vis_start ? (vis_end - vis_start) : 0;
 PlotLineG(label, getter_with_offset, &ctx, vis_count);
 ```
 
@@ -116,7 +121,7 @@ Each **PlotPanel** is one ImPlot chart with its own:
 - Live/paused mode toggle
 - Auto-fit behavior
 
-The **PlotManager** owns all panels. Users can create new panels, close panels, and rearrange them via HelloImGui docking. Each panel is a dockable window.
+The **PlotManager** owns all panels. Users can create new panels and close panels, while HelloImGui docking manages the single `Plots` workspace window that hosts panel content.
 
 **Why panels, not a single plot?** Mission control operators typically need to see related signals grouped together (e.g., all position signals in one plot, all rates in another). Multiple panels with different Y-scales are more useful than one overcrowded plot.
 
@@ -250,20 +255,25 @@ class PlotManager {
     void clear();
 
   private:
-    std::vector<PlotPanel> panels_;
-    size_t next_panel_id_ = 0;
-    double current_time_ = 0.0;
+    std::vector<PlotPanel> panels_; // Owned panel state rendered each frame.
+    size_t next_panel_id_ = 0;      // Monotonic ID source for unique panel IDs.
+    double current_time_ = 0.0;     // Latest telemetry timestamp for live X-axis sync.
 
     /// Render a single panel.
-    void render_panel(PlotPanel& panel,
-                      const std::map<size_t, data::SignalBuffer>& signal_buffers);
+    void render_panel(size_t index, PlotPanel& panel,
+                      const std::map<size_t, data::SignalBuffer>& signal_buffers,
+                      bool& request_close);
 
     /// Render panel context menu (right-click on plot area).
-    void render_panel_context_menu(PlotPanel& panel);
+    void render_panel_context_menu(PlotPanel& panel, bool& request_close);
 
     /// Render statistics overlay for a panel.
     void render_statistics_overlay(const PlotPanel& panel,
-                                   const std::map<size_t, data::SignalBuffer>& signal_buffers);
+                                   const ImVec2& plot_pos,
+                                   const ImVec2& plot_size,
+                                   const std::map<size_t, data::SignalBuffer>& signal_buffers,
+                                   double x_min,
+                                   double x_max);
 };
 
 } // namespace daedalus::views
@@ -291,8 +301,9 @@ class PlotManager {
 **Implementation**:
 
 ```cpp
-void PlotManager::render_panel(PlotPanel& panel,
-                                const std::map<size_t, data::SignalBuffer>& signal_buffers) {
+void PlotManager::render_panel(size_t index, PlotPanel& panel,
+                               const std::map<size_t, data::SignalBuffer>& signal_buffers,
+                               bool& request_close) {
     // ImPlot BeginPlot with the panel's unique ID
     if (ImPlot::BeginPlot(panel.id.c_str(), ImVec2(-1, -1))) {
 
@@ -445,7 +456,7 @@ void App::render_signal_tree_node(const data::SignalTreeNode& node, std::string_
 [+ New Plot] [History: ──●── 10s] [Live ●]
 ```
 
-- **"+ New Plot"** button: Creates a new empty PlotPanel as a dockable window
+- **"+ New Plot"** button: Creates a new empty PlotPanel in the `Plots` workspace
 - **History slider**: Adjusts the visible time window (1s to 60s, logarithmic)
 - **Live toggle**: Re-enables live scrolling for all panels
 
@@ -470,14 +481,14 @@ Right-click on the plot area opens a context menu:
 └──────────────────────────┘
 ```
 
-**HelloImGui Docking Integration**: Each PlotPanel is registered as a `DockableWindow` in `MainDockSpace`. This means users can rearrange, tab, and split plot panels using HelloImGui's built-in docking.
+**HelloImGui Docking Integration**: A `Plots` `DockableWindow` is registered in `MainDockSpace`, and the `PlotManager` renders panel content inside that workspace.
 
 **Implementation Notes**:
-- Register new panels dynamically via `runner_params.dockingParams.dockableWindows`
-- Each panel window calls `plot_manager_.render_panel(panel, signal_buffers_)`
+- Register a single `Plots` dockable window and render all panel content inside it
+- The workspace render path calls `plot_manager_.render(signal_buffers_)`
 - Panel title includes signal count: `"Plot 0 (3 signals)"`
 
-**Acceptance**: Users can create new panels, close panels, and rearrange them via docking. Right-click context menu provides signal management.
+**Acceptance**: Users can create new panels and close panels inside the docked `Plots` workspace. Right-click context menu provides signal management.
 
 ---
 
@@ -573,8 +584,7 @@ class App {
     views::PlotManager plot_manager_;
 
     // NEW: Render methods
-    void render_plot_toolbar();
-    void register_plot_windows(HelloImGui::RunnerParams& params);
+    void render_plot_workspace();
 };
 ```
 
@@ -824,7 +834,7 @@ Full interactive testing against live Hermes data with both `websocket_telemetry
 | ImPlot not initialized correctly | No plots render | Low | Already confirmed: `addons.withImplot = true` works. ImPlot context created by ImmApp |
 | PlotLineG getter overhead at scale | FPS drops | Medium | Viewport culling (binary search for visible range). Fallback: copy_to + PlotLine with offset |
 | Drag-drop doesn't work inside ImPlot | Core feature broken | Low | ImGui's drag-drop is independent of ImPlot. Drop target on the entire BeginPlot/EndPlot region |
-| HelloImGui dynamic docking window registration | Panel creation fails | Medium | Test early. If dynamic registration is limited, use a fixed pool of dockable windows |
+| HelloImGui docking integration for `Plots` workspace | Plot area not visible | Medium | Validate dockable `Plots` window setup early and keep fallback layout in `MainDockSpace` |
 | 32-bit vertex indices not enabled | Dense plots crash | Medium | Check ImGui Bundle's `ImDrawIdx` setting. If 16-bit, add compile definition in CMake |
 | Multi-axis labels overlap | Visual clutter | Low | Use `ImPlotAxisFlags_AuxDefault` which positions Y2/Y3 on the right side |
 | Statistics computation on large buffers | FPS drops | Low | Only compute over visible range. Linear scan of <1000 visible samples is negligible |
@@ -845,7 +855,7 @@ Full interactive testing against live Hermes data with both `websocket_telemetry
 - [x] Panel context menu (remove signal, assign axis, toggle features)
 - [x] Live/paused mode toggle
 - [x] History duration slider
-- [x] Dockable plot panels (rearrangeable via HelloImGui)
+- [x] Dockable `Plots` workspace integration via HelloImGui
 - [x] All Phase 1 tests still pass (no regressions)
 - [x] ~14 new unit tests for Phase 2 data model
 - [x] `./scripts/ci.sh` passes (clean build + all tests)
