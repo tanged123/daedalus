@@ -507,10 +507,10 @@ Total: ~37 test cases covering all non-UI Phase 1 components.
 
 ## 9. Phase 1 Definition of Done
 
-- [ ] All 8 steps complete
-- [ ] `./scripts/ci.sh` passes (clean release build + all tests)
-- [ ] `./scripts/test.sh` passes (all ~37 test cases)
-- [ ] End-to-end verification checklist passes (Section Step 8)
-- [ ] No compiler warnings with `-Wall -Wextra`
-- [ ] Code formatted with `nix fmt`
-- [ ] All Phase 1 items in bootstrap guide Section 16 checked off
+- [x] All 8 steps complete
+- [x] `./scripts/ci.sh` passes (clean release build + all tests)
+- [x] `./scripts/test.sh` passes (all ~37 test cases)
+- [x] End-to-end verification checklist passes (Section Step 8)
+- [x] No compiler warnings with `-Wall -Wextra`
+- [x] Code formatted with `nix fmt`
+- [x] All Phase 1 items in bootstrap guide Section 16 checked off

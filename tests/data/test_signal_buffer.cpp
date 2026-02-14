@@ -107,3 +107,72 @@ TEST(SignalBuffer, CopyTo) {
     EXPECT_DOUBLE_EQ(times[3], 4.0);
     EXPECT_DOUBLE_EQ(values[3], 50.0);
 }
+
+TEST(SignalBuffer, LowerBoundTime) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+    buf.push(3.0, 30.0);
+    buf.push(4.0, 40.0);
+
+    EXPECT_EQ(buf.lower_bound_time(0.5), 0u);
+    EXPECT_EQ(buf.lower_bound_time(1.0), 0u);
+    EXPECT_EQ(buf.lower_bound_time(2.5), 2u);
+    EXPECT_EQ(buf.lower_bound_time(4.0), 3u);
+    EXPECT_EQ(buf.lower_bound_time(4.5), 4u);
+}
+
+TEST(SignalBuffer, UpperBoundTime) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+    buf.push(3.0, 30.0);
+    buf.push(4.0, 40.0);
+
+    EXPECT_EQ(buf.upper_bound_time(0.5), 0u);
+    EXPECT_EQ(buf.upper_bound_time(1.0), 1u);
+    EXPECT_EQ(buf.upper_bound_time(2.5), 2u);
+    EXPECT_EQ(buf.upper_bound_time(4.0), 4u);
+    EXPECT_EQ(buf.upper_bound_time(4.5), 4u);
+}
+
+TEST(SignalBuffer, VisibleRangeAddsBoundarySamples) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+    buf.push(3.0, 30.0);
+    buf.push(4.0, 40.0);
+    buf.push(5.0, 50.0);
+
+    const auto [start, count] = buf.visible_range(2.2, 4.1);
+    EXPECT_EQ(start, 1u);
+    EXPECT_EQ(count, 4u); // includes one sample before/after range
+}
+
+TEST(SignalBuffer, VisibleRangeWithNoOverlap) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+    buf.push(3.0, 30.0);
+
+    const auto [start, count] = buf.visible_range(10.0, 12.0);
+    EXPECT_EQ(start, 2u);
+    EXPECT_EQ(count, 1u);
+}
+
+TEST(SignalBuffer, VisibleRangeEmptyBuffer) {
+    SignalBuffer buf(8);
+    const auto [start, count] = buf.visible_range(0.0, 1.0);
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(count, 0u);
+}
+
+TEST(SignalBuffer, VisibleRangeInvalidWindow) {
+    SignalBuffer buf(8);
+    buf.push(1.0, 10.0);
+    buf.push(2.0, 20.0);
+
+    const auto [start, count] = buf.visible_range(5.0, 2.0);
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(count, 0u);
+}

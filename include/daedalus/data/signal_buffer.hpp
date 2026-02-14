@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace daedalus::data {
@@ -62,6 +63,63 @@ class SignalBuffer {
     [[nodiscard]] double last_time() const {
         const size_t idx = (write_pos_ + capacity_ - 1) % capacity_;
         return times_[idx];
+    }
+
+    /// Find first logical sample index where time >= target.
+    /// Returns size() if no sample satisfies the predicate.
+    [[nodiscard]] size_t lower_bound_time(double target) const {
+        size_t left = 0;
+        size_t right = count_;
+        while (left < right) {
+            const size_t mid = left + (right - left) / 2;
+            if (time_at(mid) < target) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+        return left;
+    }
+
+    /// Find first logical sample index where time > target.
+    /// Returns size() if all samples are <= target.
+    [[nodiscard]] size_t upper_bound_time(double target) const {
+        size_t left = 0;
+        size_t right = count_;
+        while (left < right) {
+            const size_t mid = left + (right - left) / 2;
+            if (time_at(mid) <= target) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+        return left;
+    }
+
+    /// Compute a visible logical range [start, start + count) for an X-axis window.
+    [[nodiscard]] std::pair<size_t, size_t> visible_range(double x_min, double x_max) const {
+        if (count_ == 0 || x_min > x_max) {
+            return {0, 0};
+        }
+
+        size_t start = lower_bound_time(x_min);
+        if (start > 0) {
+            --start;
+        }
+
+        size_t end = upper_bound_time(x_max);
+        if (end < count_) {
+            ++end;
+        }
+        if (end > count_) {
+            end = count_;
+        }
+
+        if (start >= end) {
+            return {0, 0};
+        }
+        return {start, end - start};
     }
 
   private:

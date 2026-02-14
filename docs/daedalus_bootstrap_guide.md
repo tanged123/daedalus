@@ -795,11 +795,11 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 - [x] Agent rules
 - [x] ImGui Bundle custom Nix derivation + CMake integration
 - [x] IXWebSocket FetchContent integration
-- [ ] Connect to Hermes, receive schema, parse into SignalTree
-- [ ] Binary telemetry decoder (validate against `websocket_telemetry.yaml`)
-- [ ] TelemetryQueue (SPSC lock-free ring buffer)
-- [ ] Basic ImGui window with connection status + signal tree browser
-- [ ] Verify end-to-end: Hermes → WebSocket → Daedalus → signals visible in tree
+- [x] Connect to Hermes, receive schema, parse into SignalTree
+- [x] Binary telemetry decoder (validate against `websocket_telemetry.yaml`)
+- [x] TelemetryQueue (SPSC lock-free ring buffer)
+- [x] Basic ImGui window with connection status + signal tree browser
+- [x] Verify end-to-end: Hermes → WebSocket → Daedalus → signals visible in tree
 
 ### Phase 2: Signal Plotter
 

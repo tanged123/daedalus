@@ -1,0 +1,183 @@
+================================================================================
+  ICARUS SIMULATION ENGINE | DATA DICTIONARY
+  Generated: 2026-02-12 08:36:39 | Ver: 0.6.0
+================================================================================
+
+[ SYSTEM SUMMARY ]
+  Total Components:    5        Total Outputs: 90
+  Total Inputs:        6        Total Params:  1
+  Integrable States:   0        Config Values: 1
+
+--------------------------------------------------------------------------------
+COMPONENT: Rocket.Structure
+  Type: StaticMass
+--------------------------------------------------------------------------------
+  [OUTPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Structure.mass                    │ kg           │ Total mass                                                                       │
+  │ Rocket.Structure.cg.x                    │ m            │ CG position in body frame (x)                                                    │
+  │ Rocket.Structure.cg.y                    │ m            │ CG position in body frame (y)                                                    │
+  │ Rocket.Structure.cg.z                    │ m            │ CG position in body frame (z)                                                    │
+  │ Rocket.Structure.inertia.xx              │ kg*m^2       │ Moment of inertia Ixx                                                            │
+  │ Rocket.Structure.inertia.yy              │ kg*m^2       │ Moment of inertia Iyy                                                            │
+  │ Rocket.Structure.inertia.zz              │ kg*m^2       │ Moment of inertia Izz                                                            │
+  │ Rocket.Structure.inertia.xy              │ kg*m^2       │ Product of inertia Ixy                                                           │
+  │ Rocket.Structure.inertia.xz              │ kg*m^2       │ Product of inertia Ixz                                                           │
+  │ Rocket.Structure.inertia.yz              │ kg*m^2       │ Product of inertia Iyz                                                           │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+  [PARAMETERS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Structure.mass                    │ kg           │ Total mass                                                                       │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+--------------------------------------------------------------------------------
+COMPONENT: Rocket.FuelTank
+  Type: FuelTank
+--------------------------------------------------------------------------------
+  [OUTPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.FuelTank.fuel_mass                │ kg           │ Propellant mass                                                                  │
+  │ Rocket.FuelTank.fuel_mass_dot            │ kg/s         │ Propellant mass derivative                                                       │
+  │ Rocket.FuelTank.mass                     │ kg           │ Total tank mass                                                                  │
+  │ Rocket.FuelTank.cg.x                     │ m            │ CG position in body frame (x)                                                    │
+  │ Rocket.FuelTank.cg.y                     │ m            │ CG position in body frame (y)                                                    │
+  │ Rocket.FuelTank.cg.z                     │ m            │ CG position in body frame (z)                                                    │
+  │ Rocket.FuelTank.inertia.xx               │ kg*m^2       │ Moment of inertia Ixx                                                            │
+  │ Rocket.FuelTank.inertia.yy               │ kg*m^2       │ Moment of inertia Iyy                                                            │
+  │ Rocket.FuelTank.inertia.zz               │ kg*m^2       │ Moment of inertia Izz                                                            │
+  │ Rocket.FuelTank.inertia.xy               │ kg*m^2       │ Product of inertia Ixy                                                           │
+  │ Rocket.FuelTank.inertia.xz               │ kg*m^2       │ Product of inertia Ixz                                                           │
+  │ Rocket.FuelTank.inertia.yz               │ kg*m^2       │ Product of inertia Iyz                                                           │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+  [INPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.FuelTank.mass_flow_rate           │ kg/s         │ Propellant consumption rate                                                      │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+--------------------------------------------------------------------------------
+COMPONENT: Rocket.Gravity
+  Type: PointMassGravity
+--------------------------------------------------------------------------------
+  [OUTPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Gravity.force.x                   │ N            │ Gravity force (x)                                                                │
+  │ Rocket.Gravity.force.y                   │ N            │ Gravity force (y)                                                                │
+  │ Rocket.Gravity.force.z                   │ N            │ Gravity force (z)                                                                │
+  │ Rocket.Gravity.acceleration.x            │ m/s^2        │ Gravity acceleration (x)                                                         │
+  │ Rocket.Gravity.acceleration.y            │ m/s^2        │ Gravity acceleration (y)                                                         │
+  │ Rocket.Gravity.acceleration.z            │ m/s^2        │ Gravity acceleration (z)                                                         │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+  [INPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Gravity.position.z                │ m            │ Position Z                                                                       │
+  │ Rocket.Gravity.position.y                │ m            │ Position Y                                                                       │
+  │ Rocket.Gravity.mass                      │ kg           │ Vehicle mass                                                                     │
+  │ Rocket.Gravity.position.x                │ m            │ Position X                                                                       │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+  [CONFIG]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Gravity.model                     │              │ Gravity model (0=Constant, 1=PointMass)                                          │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+--------------------------------------------------------------------------------
+COMPONENT: Rocket.Engine
+  Type: RocketEngine
+--------------------------------------------------------------------------------
+  [OUTPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Engine.thrust                     │ N            │ Thrust magnitude                                                                 │
+  │ Rocket.Engine.mass_flow_rate             │ kg/s         │ Propellant mass flow rate                                                        │
+  │ Rocket.Engine.force.x                    │ N            │ Thrust force in body frame (x)                                                   │
+  │ Rocket.Engine.force.y                    │ N            │ Thrust force in body frame (y)                                                   │
+  │ Rocket.Engine.force.z                    │ N            │ Thrust force in body frame (z)                                                   │
+  │ Rocket.Engine.application_point.x        │ m            │ Nozzle position in body frame (x)                                                │
+  │ Rocket.Engine.application_point.y        │ m            │ Nozzle position in body frame (y)                                                │
+  │ Rocket.Engine.application_point.z        │ m            │ Nozzle position in body frame (z)                                                │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+  [INPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Engine.throttle_cmd               │ -            │ Throttle command [0, 1]                                                          │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+--------------------------------------------------------------------------------
+COMPONENT: Rocket.Vehicle
+  Type: Vehicle6DOF
+--------------------------------------------------------------------------------
+  [OUTPUTS]
+  ┌──────────────────────────────────────────┬──────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+  │ SIGNAL NAME                              │ UNIT         │ DESCRIPTION                                                                      │
+  ├──────────────────────────────────────────┼──────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+  │ Rocket.Vehicle.position.x                │ m            │ Position in reference frame (x)                                                  │
+  │ Rocket.Vehicle.position_dot.x            │ m/s          │ Position in reference frame derivative (x)                                       │
+  │ Rocket.Vehicle.position.y                │ m            │ Position in reference frame (y)                                                  │
+  │ Rocket.Vehicle.position_dot.y            │ m/s          │ Position in reference frame derivative (y)                                       │
+  │ Rocket.Vehicle.position.z                │ m            │ Position in reference frame (z)                                                  │
+  │ Rocket.Vehicle.position_dot.z            │ m/s          │ Position in reference frame derivative (z)                                       │
+  │ Rocket.Vehicle.velocity_body.x           │ m/s          │ Velocity in body frame (x)                                                       │
+  │ Rocket.Vehicle.velocity_body_dot.x       │ m/s/s        │ Velocity in body frame derivative (x)                                            │
+  │ Rocket.Vehicle.velocity_body.y           │ m/s          │ Velocity in body frame (y)                                                       │
+  │ Rocket.Vehicle.velocity_body_dot.y       │ m/s/s        │ Velocity in body frame derivative (y)                                            │
+  │ Rocket.Vehicle.velocity_body.z           │ m/s          │ Velocity in body frame (z)                                                       │
+  │ Rocket.Vehicle.velocity_body_dot.z       │ m/s/s        │ Velocity in body frame derivative (z)                                            │
+  │ Rocket.Vehicle.attitude.w                │              │ Body-to-reference quaternion (w)                                                 │
+  │ Rocket.Vehicle.attitude_dot.w            │              │ Body-to-reference quaternion derivative (w)                                      │
+  │ Rocket.Vehicle.attitude.x                │              │ Body-to-reference quaternion (x)                                                 │
+  │ Rocket.Vehicle.attitude_dot.x            │              │ Body-to-reference quaternion derivative (x)                                      │
+  │ Rocket.Vehicle.attitude.y                │              │ Body-to-reference quaternion (y)                                                 │
+  │ Rocket.Vehicle.attitude_dot.y            │              │ Body-to-reference quaternion derivative (y)                                      │
+  │ Rocket.Vehicle.attitude.z                │              │ Body-to-reference quaternion (z)                                                 │
+  │ Rocket.Vehicle.attitude_dot.z            │              │ Body-to-reference quaternion derivative (z)                                      │
+  │ Rocket.Vehicle.omega_body.x              │ rad/s        │ Angular velocity in body frame (x)                                               │
+  │ Rocket.Vehicle.omega_body_dot.x          │ rad/s/s      │ Angular velocity in body frame derivative (x)                                    │
+  │ Rocket.Vehicle.omega_body.y              │ rad/s        │ Angular velocity in body frame (y)                                               │
+  │ Rocket.Vehicle.omega_body_dot.y          │ rad/s/s      │ Angular velocity in body frame derivative (y)                                    │
+  │ Rocket.Vehicle.omega_body.z              │ rad/s        │ Angular velocity in body frame (z)                                               │
+  │ Rocket.Vehicle.omega_body_dot.z          │ rad/s/s      │ Angular velocity in body frame derivative (z)                                    │
+  │ Rocket.Vehicle.total_mass                │ kg           │ Total mass                                                                       │
+  │ Rocket.Vehicle.cg.x                      │ m            │ Combined CG position (x)                                                         │
+  │ Rocket.Vehicle.cg.y                      │ m            │ Combined CG position (y)                                                         │
+  │ Rocket.Vehicle.cg.z                      │ m            │ Combined CG position (z)                                                         │
+  │ Rocket.Vehicle.inertia.xx                │ kg*m^2       │ Inertia Ixx                                                                      │
+  │ Rocket.Vehicle.inertia.yy                │ kg*m^2       │ Inertia Iyy                                                                      │
+  │ Rocket.Vehicle.inertia.zz                │ kg*m^2       │ Inertia Izz                                                                      │
+  │ Rocket.Vehicle.inertia.xy                │ kg*m^2       │ Inertia Ixy                                                                      │
+  │ Rocket.Vehicle.inertia.xz                │ kg*m^2       │ Inertia Ixz                                                                      │
+  │ Rocket.Vehicle.inertia.yz                │ kg*m^2       │ Inertia Iyz                                                                      │
+  │ Rocket.Vehicle.total_force.x             │ N            │ Total force in body frame (x)                                                    │
+  │ Rocket.Vehicle.total_force.y             │ N            │ Total force in body frame (y)                                                    │
+  │ Rocket.Vehicle.total_force.z             │ N            │ Total force in body frame (z)                                                    │
+  │ Rocket.Vehicle.total_moment.x            │ N*m          │ Total moment about CG in body frame (x)                                          │
+  │ Rocket.Vehicle.total_moment.y            │ N*m          │ Total moment about CG in body frame (y)                                          │
+  │ Rocket.Vehicle.total_moment.z            │ N*m          │ Total moment about CG in body frame (z)                                          │
+  │ Rocket.Vehicle.velocity_ref.x            │ m/s          │ Velocity in reference frame (x)                                                  │
+  │ Rocket.Vehicle.velocity_ref.y            │ m/s          │ Velocity in reference frame (y)                                                  │
+  │ Rocket.Vehicle.velocity_ref.z            │ m/s          │ Velocity in reference frame (z)                                                  │
+  │ Rocket.Vehicle.position_lla.lat          │ rad          │ Geodetic latitude                                                                │
+  │ Rocket.Vehicle.position_lla.lon          │ rad          │ Longitude                                                                        │
+  │ Rocket.Vehicle.position_lla.alt          │ m            │ Altitude above ellipsoid                                                         │
+  │ Rocket.Vehicle.velocity_ned.n            │ m/s          │ North velocity                                                                   │
+  │ Rocket.Vehicle.velocity_ned.e            │ m/s          │ East velocity                                                                    │
+  │ Rocket.Vehicle.velocity_ned.d            │ m/s          │ Down velocity                                                                    │
+  │ Rocket.Vehicle.euler_zyx.yaw             │ rad          │ Yaw angle                                                                        │
+  │ Rocket.Vehicle.euler_zyx.pitch           │ rad          │ Pitch angle                                                                      │
+  │ Rocket.Vehicle.euler_zyx.roll            │ rad          │ Roll angle                                                                       │
+  └──────────────────────────────────────────┴──────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
