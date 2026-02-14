@@ -16,6 +16,7 @@ TEST(PlotPanel, DefaultState) {
     EXPECT_FALSE(panel.show_y2);
     EXPECT_FALSE(panel.show_y3);
     EXPECT_FALSE(panel.show_cursor);
+    EXPECT_FALSE(panel.cursor_initialized);
     EXPECT_FALSE(panel.show_stats);
 }
 

@@ -44,6 +44,7 @@ struct PlotPanel {
     bool show_y2 = false;
     bool show_y3 = false;
     bool show_cursor = false;
+    bool cursor_initialized = false;
     double cursor_time = 0.0;
     bool show_stats = false;
 

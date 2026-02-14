@@ -490,9 +490,14 @@ void PlotManager::render_panel(size_t index, PlotPanel &panel,
             signal_colors[sig.buffer_index] = ImPlot::GetLastItemColor();
         }
 
+        if (!panel.show_cursor) {
+            panel.cursor_initialized = false;
+        }
+
         if (panel.show_cursor) {
-            if (panel.cursor_time <= 0.0) {
+            if (!panel.cursor_initialized) {
                 panel.cursor_time = current_time_;
+                panel.cursor_initialized = true;
             }
             ImPlot::DragLineX(0, &panel.cursor_time, ImVec4(1.0f, 1.0f, 0.0f, 1.0f), 1.0f);
             ImPlot::TagX(panel.cursor_time, ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%.3f s",
@@ -527,7 +532,8 @@ void PlotManager::render_panel(size_t index, PlotPanel &panel,
             ImGui::EndDragDropTarget();
         }
 
-        if (panel.live_mode && ImPlot::IsPlotHovered() &&
+        const bool drag_drop_active = ImGui::GetDragDropPayload() != nullptr;
+        if (panel.live_mode && !drag_drop_active && ImPlot::IsPlotHovered() &&
             (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::GetIO().MouseWheel != 0.0f)) {
             panel.live_mode = false;
         }
