@@ -212,7 +212,7 @@ Phase 3 adds two new dockable windows to the existing layout:
 
 ## 4. Implementation Steps
 
-### Step 1: Console Data Model [ ]
+### Step 1: Console Data Model [x]
 
 **Files**: `include/daedalus/views/console.hpp`
 
@@ -314,7 +314,7 @@ class ConsoleLog {
 
 ---
 
-### Step 2: Simulation State Tracking [ ]
+### Step 2: Simulation State Tracking [x]
 
 **Files**: `include/daedalus/views/controls.hpp`
 
@@ -406,7 +406,7 @@ bool PlaybackState::update_from_event(const nlohmann::json& msg) {
 
 ---
 
-### Step 3: Playback Controls Rendering [ ]
+### Step 3: Playback Controls Rendering [x]
 
 **Files**: `src/daedalus/views/controls.cpp`, `include/daedalus/views/controls.hpp` (extend)
 
@@ -543,7 +543,7 @@ if (action) {
 
 ---
 
-### Step 4: Console View Rendering [ ]
+### Step 4: Console View Rendering [x]
 
 **Files**: `include/daedalus/views/console.hpp` (extend), `src/daedalus/views/console.cpp`
 
@@ -667,7 +667,7 @@ void ConsoleView::render(const ConsoleLog& log) {
 
 ---
 
-### Step 5: Command History + Replay [ ]
+### Step 5: Command History + Replay [x]
 
 **Files**: `src/daedalus/views/console.cpp` (extend), `src/daedalus/app.cpp` (extend)
 
@@ -733,7 +733,7 @@ console_view_.set_replay_callback([this](const std::string& action,
 
 ---
 
-### Step 6: Signal Value Inspector [ ]
+### Step 6: Signal Value Inspector [x]
 
 **Files**: `include/daedalus/views/inspector.hpp`, `src/daedalus/views/inspector.cpp`, `tests/views/test_inspector.cpp`
 
@@ -898,7 +898,7 @@ if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
 
 ---
 
-### Step 7: App Integration + Docking Layout [ ]
+### Step 7: App Integration + Docking Layout [x]
 
 **Files**: `include/daedalus/app.hpp`, `src/daedalus/app.cpp`, `CMakeLists.txt`
 
@@ -1128,9 +1128,9 @@ console_view_.set_replay_callback([this](const std::string& action,
    - [ ] Inspector search filters 90 signals responsively
    - [ ] Console handles high event rate without lag
 8. Run tests: `./scripts/test.sh` — all pass (Phase 1 + 2 + 3 tests)
-   - [ ] `./scripts/test.sh` passes
+   - [x] `./scripts/test.sh` passes
 9. Run CI: `./scripts/ci.sh` — clean build + all tests
-   - [ ] `./scripts/ci.sh` passes
+   - [x] `./scripts/ci.sh` passes
 
 **Acceptance**: Full Phase 3 feature set works end-to-end against live Hermes data.
 
@@ -1283,25 +1283,25 @@ Full interactive testing against live Hermes data:
 
 ## 10. Phase 3 Definition of Done
 
-- [ ] `ConsoleLog` and `ConsoleEntry` data model with tests
-- [ ] `SimulationState` enum and `PlaybackState` tracking with tests
-- [ ] Transport buttons (Pause/Resume/Reset/Step) in status bar
-- [ ] Buttons correctly enabled/disabled based on simulation state
-- [ ] Commands dispatched to `HermesClient` on button click
-- [ ] Console dockable window with scrollable event log
-- [ ] Console entry type filtering (Events/Acks/Errors/Commands/System)
-- [ ] Console text search filter
-- [ ] Console auto-scroll to latest entry
-- [ ] All events, acks, errors, and commands logged with timestamps
-- [ ] Command history with right-click replay
-- [ ] Signal value inspector dockable window
-- [ ] Inspector shows all subscribed signals with current values and units
-- [ ] Inspector text search filter
-- [ ] Inspector column sorting (signal name, value)
-- [ ] Docking layout: Signal Tree + Inspector (left), Plots (right-top), Console (right-bottom)
-- [ ] Reconnection correctly resets state and console logs connection events
-- [ ] All Phase 1+2 tests still pass (no regressions)
-- [ ] ~28 new unit tests for Phase 3 data models
-- [ ] `./scripts/ci.sh` passes (clean build + all tests)
+- [x] `ConsoleLog` and `ConsoleEntry` data model with tests
+- [x] `SimulationState` enum and `PlaybackState` tracking with tests
+- [x] Transport buttons (Pause/Resume/Reset/Step) in status bar
+- [x] Buttons correctly enabled/disabled based on simulation state
+- [x] Commands dispatched to `HermesClient` on button click
+- [x] Console dockable window with scrollable event log
+- [x] Console entry type filtering (Events/Acks/Errors/Commands/System)
+- [x] Console text search filter
+- [x] Console auto-scroll to latest entry
+- [x] All events, acks, errors, and commands logged with timestamps
+- [x] Command history with right-click replay
+- [x] Signal value inspector dockable window
+- [x] Inspector shows all subscribed signals with current values and units
+- [x] Inspector text search filter
+- [x] Inspector column sorting (signal name, value)
+- [x] Docking layout: Signal Tree + Inspector (left), Plots (right-top), Console (right-bottom)
+- [x] Reconnection correctly resets state and console logs connection events
+- [x] All Phase 1+2 tests still pass (no regressions)
+- [x] ~28 new unit tests for Phase 3 data models
+- [x] `./scripts/ci.sh` passes (clean build + all tests)
 - [ ] End-to-end verification against live Hermes data
 - [ ] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)

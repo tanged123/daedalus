@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -48,6 +49,17 @@ namespace {
     return false;
 }
 
+[[nodiscard]] bool is_reset_message(const nlohmann::json &msg) {
+    const std::string type = msg.value("type", "");
+    if (type == "event") {
+        return msg.value("event", "") == "reset";
+    }
+    if (type == "ack") {
+        return msg.value("action", "") == "reset";
+    }
+    return false;
+}
+
 } // namespace
 
 App::App() = default;
@@ -78,6 +90,14 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
             }
             return it->second;
         });
+    console_view_.set_replay_callback(
+        [this](const std::string &action, const nlohmann::json &params) {
+            if (action.empty()) {
+                return;
+            }
+            client_->send_command(action, params);
+            console_log_.add_command(action, params);
+        });
 
     // Set up Hello ImGui runner params
     HelloImGui::RunnerParams runner_params;
@@ -98,30 +118,44 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     // Define docking layout
     //  ___________________________________________
     //  |              |                           |
-    //  | Signal Tree  |    MainDockSpace          |
-    //  | (left 25%)   |    (future: plotter)      |
-    //  |              |                           |
-    //  |              |                           |
+    //  | Signals      |    MainDockSpace          |
+    //  | [Tree|Table] |    (plots)                |
+    //  | (left 20%)   |                           |
+    //  |              |---------------------------|
+    //  |              |    Console                |
+    //  |              |    (bottom 30%)           |
     //  -------------------------------------------
     HelloImGui::DockingSplit split_left;
     split_left.initialDock = "MainDockSpace";
-    split_left.newDock = "SignalTreeSpace";
+    split_left.newDock = "SignalsSpace";
     split_left.direction = ImGuiDir_Left;
-    split_left.ratio = 0.25f;
-    runner_params.dockingParams.dockingSplits = {split_left};
+    split_left.ratio = 0.20f;
+
+    HelloImGui::DockingSplit split_plots_console;
+    split_plots_console.initialDock = "MainDockSpace";
+    split_plots_console.newDock = "ConsoleSpace";
+    split_plots_console.direction = ImGuiDir_Down;
+    split_plots_console.ratio = 0.30f;
+
+    runner_params.dockingParams.dockingSplits = {split_left, split_plots_console};
 
     // Define dockable windows
-    HelloImGui::DockableWindow signal_tree_window;
-    signal_tree_window.label = "Signal Tree";
-    signal_tree_window.dockSpaceName = "SignalTreeSpace";
-    signal_tree_window.GuiFunction = [this] { render_signal_tree(); };
+    HelloImGui::DockableWindow signals_window;
+    signals_window.label = "Signals";
+    signals_window.dockSpaceName = "SignalsSpace";
+    signals_window.GuiFunction = [this] { render_signals(); };
 
     HelloImGui::DockableWindow plots_window;
     plots_window.label = "Plots";
     plots_window.dockSpaceName = "MainDockSpace";
     plots_window.GuiFunction = [this] { render_plot_workspace(); };
 
-    runner_params.dockingParams.dockableWindows = {signal_tree_window, plots_window};
+    HelloImGui::DockableWindow console_window;
+    console_window.label = "Console";
+    console_window.dockSpaceName = "ConsoleSpace";
+    console_window.GuiFunction = [this] { render_console(); };
+
+    runner_params.dockingParams.dockableWindows = {signals_window, plots_window, console_window};
 
     // Status bar: connection status
     runner_params.callbacks.ShowStatus = [this] { render_connection_status(); };
@@ -155,72 +189,83 @@ void App::process_events() {
 }
 
 void App::handle_event(const std::string &json_str) {
-    try {
-        auto msg = nlohmann::json::parse(json_str);
-        std::string type = msg.value("type", "");
+    console_log_.add_from_json(json_str, playback_state_.last_sim_time);
 
-        if (type == "schema") {
-            current_schema_ = protocol::parse_schema(msg);
-            signal_tree_.build_from_schema(current_schema_);
-            signal_units_.clear();
-            for (const auto &module : current_schema_.modules) {
-                for (const auto &signal : module.signals) {
-                    if (!signal.unit.has_value()) {
-                        continue;
-                    }
-                    signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
+    auto msg = nlohmann::json::parse(json_str, nullptr, false);
+    if (msg.is_discarded()) {
+        return;
+    }
+
+    const std::string type = msg.value("type", "");
+    bool state_changed = playback_state_.update_from_event(msg);
+    if (!state_changed) {
+        (void)playback_state_.update_from_ack(msg);
+    }
+
+    if (is_reset_message(msg)) {
+        for (auto &[index, buffer] : signal_buffers_) {
+            (void)index;
+            buffer.clear();
+        }
+        plot_manager_.set_current_time(0.0);
+    }
+
+    if (type == "schema") {
+        current_schema_ = protocol::parse_schema(msg);
+        signal_tree_.build_from_schema(current_schema_);
+        signal_units_.clear();
+        for (const auto &module : current_schema_.modules) {
+            for (const auto &signal : module.signals) {
+                if (!signal.unit.has_value()) {
+                    continue;
                 }
-            }
-            schema_received_ = true;
-
-            // Auto-subscribe to all signals
-            client_->subscribe({"*"});
-            std::printf("[Daedalus] Schema received: %zu modules\n",
-                        current_schema_.modules.size());
-
-        } else if (type == "ack") {
-            std::string action = msg.value("action", "");
-            if (action == "subscribe") {
-                auto ack = protocol::parse_subscribe_ack(msg);
-                signal_tree_.update_subscription(ack);
-
-                // Create signal buffers for each subscribed signal
-                subscribed_signals_ = ack.signals;
-                signal_buffers_.clear();
-                for (size_t i = 0; i < ack.signals.size(); ++i) {
-                    signal_buffers_.emplace(i, data::SignalBuffer{});
-                }
-                plot_manager_.clear_panel_signals();
-
-                std::printf("[Daedalus] Subscribed to %u signals\n", ack.count);
-
-                // Start telemetry flow
-                client_->resume();
-            }
-        } else if (type == "event") {
-            std::string event = msg.value("event", "");
-            std::printf("[Daedalus] Event: %s\n", event.c_str());
-
-        } else if (type == "error") {
-            std::string message = msg.value("message", "");
-            std::fprintf(stderr, "[Daedalus] Error: %s\n", message.c_str());
-
-        } else if (type == "connection") {
-            std::string event = msg.value("event", "");
-            std::printf("[Daedalus] Connection: %s\n", event.c_str());
-
-            if (event == "disconnected") {
-                // Reset state for reconnection
-                schema_received_ = false;
-                subscribed_signals_.clear();
-                signal_buffers_.clear();
-                signal_units_.clear();
-                signal_tree_.clear();
-                plot_manager_.clear_panel_signals();
+                signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
             }
         }
-    } catch (const std::exception &e) {
-        std::fprintf(stderr, "[Daedalus] Failed to parse event: %s\n", e.what());
+        schema_received_ = true;
+
+        // Auto-subscribe to all signals
+        client_->subscribe({"*"});
+        console_log_.add_command("subscribe", {{"signals", nlohmann::json::array({"*"})}});
+
+    } else if (type == "ack") {
+        const std::string action = msg.value("action", "");
+        if (action == "subscribe") {
+            auto ack = protocol::parse_subscribe_ack(msg);
+            signal_tree_.update_subscription(ack);
+
+            // Create signal buffers for each subscribed signal
+            subscribed_signals_ = ack.signals;
+            signal_buffers_.clear();
+            for (size_t i = 0; i < ack.signals.size(); ++i) {
+                signal_buffers_.emplace(i, data::SignalBuffer{});
+            }
+            plot_manager_.clear_panel_signals();
+
+            // Start telemetry flow
+            client_->resume();
+            console_log_.add_command("resume");
+        }
+    } else if (type == "connection") {
+        const std::string event = msg.value("event", "");
+        if (event == "connected") {
+            playback_state_.connected = true;
+        } else if (event == "disconnected") {
+            playback_state_.connected = false;
+            playback_state_.reset();
+
+            // Reset state for reconnection
+            schema_received_ = false;
+            subscribed_signals_.clear();
+            signal_buffers_.clear();
+            signal_units_.clear();
+            signal_tree_.clear();
+            plot_manager_.clear_panel_signals();
+            signal_inspector_.reset();
+        } else if (event == "error") {
+            playback_state_.connected = false;
+            playback_state_.reset();
+        }
     }
 }
 
@@ -241,12 +286,14 @@ void App::process_telemetry() {
                 }
             }
             plot_manager_.set_current_time(hdr.time);
+            playback_state_.update_from_telemetry(hdr.frame, hdr.time);
         }
     }
 }
 
 void App::render_connection_status() {
     auto state = client_->state();
+    playback_state_.connected = (state == protocol::ConnectionState::Connected);
     ImVec4 color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
     const char *label = "Unknown";
 
@@ -286,22 +333,71 @@ void App::render_connection_status() {
         ImGui::SameLine();
         ImGui::Text("%zu signals", subscribed_signals_.size());
     }
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    const auto action = views::render_playback_controls(playback_state_);
+    if (!action.has_value() || client_ == nullptr) {
+        return;
+    }
+
+    switch (*action) {
+    case views::PlaybackAction::Pause:
+        client_->pause();
+        console_log_.add_command("pause");
+        break;
+    case views::PlaybackAction::Resume:
+        client_->resume();
+        console_log_.add_command("resume");
+        break;
+    case views::PlaybackAction::Reset:
+        client_->reset();
+        console_log_.add_command("reset");
+        break;
+    case views::PlaybackAction::Step:
+        client_->step(playback_state_.step_count);
+        console_log_.add_command("step", {{"count", playback_state_.step_count}});
+        break;
+    }
 }
 
-void App::render_signal_tree() {
+void App::render_signals() {
+    // View mode toggle
+    if (ImGui::Selectable("Tree", signal_view_mode_ == SignalViewMode::Tree,
+                          ImGuiSelectableFlags_None, ImVec2(40, 0))) {
+        signal_view_mode_ = SignalViewMode::Tree;
+    }
+    ImGui::SameLine();
+    if (ImGui::Selectable("Table", signal_view_mode_ == SignalViewMode::Table,
+                          ImGuiSelectableFlags_None, ImVec2(40, 0))) {
+        signal_view_mode_ = SignalViewMode::Table;
+    }
+
+    // Shared filter input
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##signal_filter", "Filter signals...", signal_filter_,
+                             sizeof(signal_filter_));
+    ImGui::Separator();
+
     if (!schema_received_) {
         ImGui::TextDisabled("Waiting for schema...");
         return;
     }
 
+    if (signal_view_mode_ == SignalViewMode::Tree) {
+        render_signal_tree();
+    } else {
+        signal_inspector_.set_filter_text(signal_filter_);
+        signal_inspector_.render(subscribed_signals_, signal_buffers_, signal_units_);
+    }
+}
+
+void App::render_signal_tree() {
     const bool apply_tree_open_request = tree_open_state_request_.has_value();
 
-    // Search filter
-    static char filter[128] = "";
-    ImGui::InputTextWithHint("##filter", "Filter signals...", filter, sizeof(filter));
-    ImGui::Separator();
-
-    const std::string normalized_filter = to_lower_ascii(std::string_view(filter));
+    const std::string normalized_filter = to_lower_ascii(std::string_view(signal_filter_));
     auto &root = signal_tree_.root();
     for (auto &child : root.children) {
         if (node_matches_filter(*child, normalized_filter)) {
@@ -381,5 +477,7 @@ void App::render_plot_workspace() {
     plot_manager_.render_toolbar();
     plot_manager_.render(signal_buffers_);
 }
+
+void App::render_console() { console_view_.render(console_log_); }
 
 } // namespace daedalus

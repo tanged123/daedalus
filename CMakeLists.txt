@@ -58,9 +58,14 @@ find_package(OpenGL REQUIRED)
 # =============================================================================
 add_library(
   daedalus_lib STATIC
-  src/daedalus/app.cpp src/daedalus/protocol/schema.cpp
-  src/daedalus/protocol/client.cpp src/daedalus/data/signal_tree.cpp
-  src/daedalus/views/plotter.cpp)
+  src/daedalus/app.cpp
+  src/daedalus/protocol/schema.cpp
+  src/daedalus/protocol/client.cpp
+  src/daedalus/data/signal_tree.cpp
+  src/daedalus/views/plotter.cpp
+  src/daedalus/views/console.cpp
+  src/daedalus/views/controls.cpp
+  src/daedalus/views/inspector.cpp)
 
 target_include_directories(daedalus_lib
                            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -92,7 +97,10 @@ if(BUILD_TESTING)
     tests/data/test_signal_buffer.cpp
     tests/data/test_signal_tree.cpp
     tests/data/test_telemetry_queue.cpp
-    tests/views/test_plotter.cpp)
+    tests/views/test_plotter.cpp
+    tests/views/test_console.cpp
+    tests/views/test_controls.cpp
+    tests/views/test_inspector.cpp)
 
   target_link_libraries(daedalus_tests PRIVATE daedalus_lib GTest::gtest
                                                GTest::gtest_main)

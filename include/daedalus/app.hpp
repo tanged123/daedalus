@@ -4,6 +4,9 @@
 #include "daedalus/data/signal_tree.hpp"
 #include "daedalus/protocol/client.hpp"
 #include "daedalus/protocol/schema.hpp"
+#include "daedalus/views/console.hpp"
+#include "daedalus/views/controls.hpp"
+#include "daedalus/views/inspector.hpp"
 #include "daedalus/views/plotter.hpp"
 
 #include <map>
@@ -14,6 +17,9 @@
 #include <unordered_map>
 
 namespace daedalus {
+
+/// View mode for the unified Signals panel.
+enum class SignalViewMode { Tree, Table };
 
 /// Application entry point and lifecycle management.
 /// Initializes Hello ImGui, connects to Hermes, and runs the render loop.
@@ -33,9 +39,11 @@ class App {
 
     /// UI rendering functions (called each frame).
     void render_connection_status();
+    void render_signals();
     void render_signal_tree();
     void render_signal_tree_node(const data::SignalTreeNode &node, std::string_view filter);
     void render_plot_workspace();
+    void render_console();
 
     /// Handle a parsed JSON event from the event queue.
     void handle_event(const std::string &json_str);
@@ -48,9 +56,15 @@ class App {
     protocol::Schema current_schema_;
     std::vector<std::string> subscribed_signals_;
     views::PlotManager plot_manager_;
+    views::ConsoleLog console_log_;
+    views::ConsoleView console_view_;
+    views::PlaybackState playback_state_;
+    views::SignalInspector signal_inspector_;
     std::string server_url_ = "ws://127.0.0.1:8765";
     bool schema_received_ = false;
     std::optional<bool> tree_open_state_request_;
+    SignalViewMode signal_view_mode_ = SignalViewMode::Tree;
+    char signal_filter_[128] = {};
 };
 
 } // namespace daedalus
