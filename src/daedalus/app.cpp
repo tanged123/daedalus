@@ -115,6 +115,10 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     // Disable idling — we have live telemetry streaming
     runner_params.fpsIdling.enableIdling = false;
 
+    // Always reapply layout from code — prevents stale .ini from breaking controls
+    runner_params.dockingParams.layoutCondition =
+        HelloImGui::DockingLayoutCondition::ApplicationStart;
+
     // Define docking layout
     //  ___________________________________________
     //  |              |                           |
