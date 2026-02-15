@@ -49,24 +49,28 @@ bool PlaybackState::update_from_ack(const nlohmann::json &msg) {
     }
 
     const std::string action = msg.value("action", "");
-    const SimulationState previous = sim_state;
-
     if (action == "resume") {
+        const SimulationState previous = sim_state;
         sim_state = SimulationState::Running;
+        return previous != sim_state;
     } else if (action == "pause") {
+        const SimulationState previous = sim_state;
         sim_state = SimulationState::Paused;
+        return previous != sim_state;
     } else if (action == "reset") {
         sim_state = SimulationState::Paused;
         last_frame = 0;
         last_sim_time = 0.0;
+        // Reset always has observable side effects (frame/time clearing), so treat it as a change.
+        return true;
     } else if (action == "step") {
+        const SimulationState previous = sim_state;
         // Step executes while paused and should keep paused semantics.
         sim_state = SimulationState::Paused;
+        return previous != sim_state;
     } else {
         return false;
     }
-
-    return previous != sim_state;
 }
 
 void PlaybackState::update_from_telemetry(uint64_t frame, double sim_time) {
