@@ -2,7 +2,7 @@
 
 > **Created**: 2026-02-12
 > **Branch**: `phase2`
-> **Status**: In Progress
+> **Status**: Complete
 > **Depends on**: Phase 1 (complete)
 
 ---
@@ -859,5 +859,5 @@ Full interactive testing against live Hermes data with both `websocket_telemetry
 - [x] All Phase 1 tests still pass (no regressions)
 - [x] ~14 new unit tests for Phase 2 data model
 - [x] `./scripts/ci.sh` passes (clean build + all tests)
-- [ ] End-to-end verification against live Hermes data
-- [ ] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)
+- [x] End-to-end verification against live Hermes data
+- [x] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)

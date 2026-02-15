@@ -803,12 +803,12 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 
 ### Phase 2: Signal Plotter
 
-- [ ] ImPlot integration (provided by ImGui Bundle)
-- [ ] SignalBuffer (per-signal rolling history ring buffer)
-- [ ] Drag-and-drop signals from tree onto plot areas
-- [ ] Scrolling time-series plots with auto-scaling
-- [ ] Multiple Y-axes with independent scaling
-- [ ] Cursors, markers, statistics overlay (min/max/mean)
+- [x] ImPlot integration (provided by ImGui Bundle)
+- [x] SignalBuffer (per-signal rolling history ring buffer)
+- [x] Drag-and-drop signals from tree onto plot areas
+- [x] Scrolling time-series plots with auto-scaling
+- [x] Multiple Y-axes with independent scaling
+- [x] Cursors, markers, statistics overlay (min/max/mean)
 
 ### Phase 3: Playback Controls + Console
 
