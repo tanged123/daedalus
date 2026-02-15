@@ -313,7 +313,8 @@ void ConsoleView::render_entry(const ConsoleEntry &entry, size_t row_index) {
         if (ImGui::MenuItem("Replay command") && replay_callback_) {
             auto cmd = nlohmann::json::parse(entry.detail, nullptr, false);
             if (!cmd.is_discarded()) {
-                replay_callback_(cmd.value("action", ""), cmd.value("params", nlohmann::json{}));
+                replay_callback_(cmd.value("action", ""),
+                                 cmd.value("params", nlohmann::json::object()));
             }
         }
 

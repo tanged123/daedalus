@@ -154,3 +154,50 @@ TEST(SignalInspector, MissingBufferSortsAfterSignalsWithValuesWhenSortingByValue
     EXPECT_EQ(indices[1], 2u);
     EXPECT_EQ(indices[2], 1u);
 }
+
+TEST(SignalInspector, SortByValueRebuildsWhenValuesChange) {
+    SignalInspector inspector;
+    const std::vector<std::string> signals = {"a", "b", "c"};
+    std::map<size_t, daedalus::data::SignalBuffer> buffers = {
+        {0, make_buffer(1.0)},
+        {1, make_buffer(2.0)},
+        {2, make_buffer(3.0)},
+    };
+    const std::unordered_map<std::string, std::string> units = {};
+
+    inspector.set_sort(InspectorSortColumn::Value, true);
+    const auto initial = inspector.build_visible_indices(signals, buffers, units);
+    ASSERT_EQ(initial.size(), 3u);
+    EXPECT_EQ(initial[0], 0u);
+    EXPECT_EQ(initial[1], 1u);
+    EXPECT_EQ(initial[2], 2u);
+
+    buffers[0].push(2.0, 10.0);
+    const auto updated = inspector.build_visible_indices(signals, buffers, units);
+    ASSERT_EQ(updated.size(), 3u);
+    EXPECT_EQ(updated[0], 1u);
+    EXPECT_EQ(updated[1], 2u);
+    EXPECT_EQ(updated[2], 0u);
+}
+
+TEST(SignalInspector, SortRebuildsWhenSignalsChangeWithSameCount) {
+    SignalInspector inspector;
+    const std::vector<std::string> initial_signals = {"b.signal", "a.signal"};
+    const std::vector<std::string> replaced_signals = {"a.signal", "z.signal"};
+    const std::map<size_t, daedalus::data::SignalBuffer> buffers = {
+        {0, make_buffer(1.0)},
+        {1, make_buffer(2.0)},
+    };
+    const std::unordered_map<std::string, std::string> units = {};
+
+    inspector.set_sort(InspectorSortColumn::Signal, true);
+    const auto initial = inspector.build_visible_indices(initial_signals, buffers, units);
+    ASSERT_EQ(initial.size(), 2u);
+    EXPECT_EQ(initial[0], 1u);
+    EXPECT_EQ(initial[1], 0u);
+
+    const auto updated = inspector.build_visible_indices(replaced_signals, buffers, units);
+    ASSERT_EQ(updated.size(), 2u);
+    EXPECT_EQ(updated[0], 0u);
+    EXPECT_EQ(updated[1], 1u);
+}

@@ -46,9 +46,6 @@ class SignalInspector {
     bool sort_ascending_ = true;
 
     std::vector<size_t> sorted_indices_;
-    size_t last_signal_count_ = 0;
-    InspectorSortColumn last_sort_column_ = InspectorSortColumn::Signal;
-    bool last_sort_ascending_ = true;
 };
 
 } // namespace daedalus::views

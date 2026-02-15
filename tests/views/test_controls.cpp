@@ -61,6 +61,18 @@ TEST(PlaybackState, ResetEventClearsFrameAndTimeAndSetsPaused) {
     EXPECT_DOUBLE_EQ(state.last_sim_time, 0.0);
 }
 
+TEST(PlaybackState, ResetEventReportsChangeWhenAlreadyPaused) {
+    PlaybackState state;
+    state.sim_state = SimulationState::Paused;
+    state.last_frame = 42;
+    state.last_sim_time = 1.25;
+
+    EXPECT_TRUE(state.update_from_event({{"type", "event"}, {"event", "reset"}}));
+    EXPECT_EQ(state.sim_state, SimulationState::Paused);
+    EXPECT_EQ(state.last_frame, 0u);
+    EXPECT_DOUBLE_EQ(state.last_sim_time, 0.0);
+}
+
 TEST(PlaybackState, NonEventMessageDoesNotChangeState) {
     PlaybackState state;
     state.sim_state = SimulationState::Paused;

@@ -129,9 +129,6 @@ void SignalInspector::reset() {
     set_filter_text("");
     sort_column_ = InspectorSortColumn::Signal;
     sort_ascending_ = true;
-    last_signal_count_ = 0;
-    last_sort_column_ = InspectorSortColumn::Signal;
-    last_sort_ascending_ = true;
     sorted_indices_.clear();
 }
 
@@ -169,11 +166,6 @@ void SignalInspector::rebuild_sorted_indices(
     const std::vector<std::string> &subscribed_signals,
     const std::map<size_t, data::SignalBuffer> &signal_buffers,
     const std::unordered_map<std::string, std::string> &signal_units) {
-    if (last_signal_count_ == subscribed_signals.size() && last_sort_column_ == sort_column_ &&
-        last_sort_ascending_ == sort_ascending_) {
-        return;
-    }
-
     sorted_indices_.resize(subscribed_signals.size());
     for (size_t i = 0; i < subscribed_signals.size(); ++i) {
         sorted_indices_[i] = i;
@@ -220,10 +212,6 @@ void SignalInspector::rebuild_sorted_indices(
     };
 
     std::sort(sorted_indices_.begin(), sorted_indices_.end(), compare);
-
-    last_signal_count_ = subscribed_signals.size();
-    last_sort_column_ = sort_column_;
-    last_sort_ascending_ = sort_ascending_;
 }
 
 bool SignalInspector::passes_filter(const std::string &signal_path) const {

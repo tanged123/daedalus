@@ -24,21 +24,23 @@ bool PlaybackState::update_from_event(const nlohmann::json &msg) {
     }
 
     const std::string event = msg.value("event", "");
-    const SimulationState previous = sim_state;
-
     if (event == "running") {
+        const SimulationState previous = sim_state;
         sim_state = SimulationState::Running;
+        return previous != sim_state;
     } else if (event == "paused") {
+        const SimulationState previous = sim_state;
         sim_state = SimulationState::Paused;
+        return previous != sim_state;
     } else if (event == "reset") {
         sim_state = SimulationState::Paused;
         last_frame = 0;
         last_sim_time = 0.0;
+        // Reset always has observable side effects (frame/time clearing), so treat it as a change.
+        return true;
     } else {
         return false;
     }
-
-    return previous != sim_state;
 }
 
 bool PlaybackState::update_from_ack(const nlohmann::json &msg) {

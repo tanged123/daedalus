@@ -95,6 +95,16 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
             if (action.empty()) {
                 return;
             }
+            if (client_ == nullptr || !playback_state_.connected ||
+                client_->state() != protocol::ConnectionState::Connected) {
+                nlohmann::json detail = {
+                    {"action", action},
+                    {"reason", "not connected"},
+                };
+                console_log_.add(views::ConsoleEntryType::System, "Replay skipped: not connected",
+                                 detail.dump(), playback_state_.last_sim_time);
+                return;
+            }
             client_->send_command(action, params);
             console_log_.add_command(action, params);
         });
@@ -200,76 +210,83 @@ void App::handle_event(const std::string &json_str) {
         return;
     }
 
-    const std::string type = msg.value("type", "");
-    bool state_changed = playback_state_.update_from_event(msg);
-    if (!state_changed) {
-        (void)playback_state_.update_from_ack(msg);
-    }
-
-    if (is_reset_message(msg)) {
-        for (auto &[index, buffer] : signal_buffers_) {
-            (void)index;
-            buffer.clear();
+    try {
+        const std::string type = msg.value("type", "");
+        bool state_changed = playback_state_.update_from_event(msg);
+        if (!state_changed) {
+            (void)playback_state_.update_from_ack(msg);
         }
-        plot_manager_.set_current_time(0.0);
-    }
 
-    if (type == "schema") {
-        current_schema_ = protocol::parse_schema(msg);
-        signal_tree_.build_from_schema(current_schema_);
-        signal_units_.clear();
-        for (const auto &module : current_schema_.modules) {
-            for (const auto &signal : module.signals) {
-                if (!signal.unit.has_value()) {
-                    continue;
-                }
-                signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
+        if (is_reset_message(msg)) {
+            for (auto &[index, buffer] : signal_buffers_) {
+                (void)index;
+                buffer.clear();
             }
+            plot_manager_.set_current_time(0.0);
         }
-        schema_received_ = true;
 
-        // Auto-subscribe to all signals
-        client_->subscribe({"*"});
-        console_log_.add_command("subscribe", {{"signals", nlohmann::json::array({"*"})}});
-
-    } else if (type == "ack") {
-        const std::string action = msg.value("action", "");
-        if (action == "subscribe") {
-            auto ack = protocol::parse_subscribe_ack(msg);
-            signal_tree_.update_subscription(ack);
-
-            // Create signal buffers for each subscribed signal
-            subscribed_signals_ = ack.signals;
-            signal_buffers_.clear();
-            for (size_t i = 0; i < ack.signals.size(); ++i) {
-                signal_buffers_.emplace(i, data::SignalBuffer{});
-            }
-            plot_manager_.clear_panel_signals();
-
-            // Start telemetry flow
-            client_->resume();
-            console_log_.add_command("resume");
-        }
-    } else if (type == "connection") {
-        const std::string event = msg.value("event", "");
-        if (event == "connected") {
-            playback_state_.connected = true;
-        } else if (event == "disconnected") {
-            playback_state_.connected = false;
-            playback_state_.reset();
-
-            // Reset state for reconnection
-            schema_received_ = false;
-            subscribed_signals_.clear();
-            signal_buffers_.clear();
+        if (type == "schema") {
+            current_schema_ = protocol::parse_schema(msg);
+            signal_tree_.build_from_schema(current_schema_);
             signal_units_.clear();
-            signal_tree_.clear();
-            plot_manager_.clear_panel_signals();
-            signal_inspector_.reset();
-        } else if (event == "error") {
-            playback_state_.connected = false;
-            playback_state_.reset();
+            for (const auto &module : current_schema_.modules) {
+                for (const auto &signal : module.signals) {
+                    if (!signal.unit.has_value()) {
+                        continue;
+                    }
+                    signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
+                }
+            }
+            schema_received_ = true;
+
+            // Auto-subscribe to all signals
+            client_->subscribe({"*"});
+            console_log_.add_command("subscribe", {{"signals", nlohmann::json::array({"*"})}});
+
+        } else if (type == "ack") {
+            const std::string action = msg.value("action", "");
+            if (action == "subscribe") {
+                auto ack = protocol::parse_subscribe_ack(msg);
+                signal_tree_.update_subscription(ack);
+
+                // Create signal buffers for each subscribed signal
+                subscribed_signals_ = ack.signals;
+                signal_buffers_.clear();
+                for (size_t i = 0; i < ack.signals.size(); ++i) {
+                    signal_buffers_.emplace(i, data::SignalBuffer{});
+                }
+                plot_manager_.clear_panel_signals();
+
+                // Start telemetry flow
+                client_->resume();
+                console_log_.add_command("resume");
+            }
+        } else if (type == "connection") {
+            const std::string event = msg.value("event", "");
+            if (event == "connected") {
+                playback_state_.connected = true;
+            } else if (event == "disconnected") {
+                playback_state_.connected = false;
+                playback_state_.reset();
+
+                // Reset state for reconnection
+                schema_received_ = false;
+                subscribed_signals_.clear();
+                signal_buffers_.clear();
+                signal_units_.clear();
+                signal_tree_.clear();
+                plot_manager_.clear_panel_signals();
+                signal_inspector_.reset();
+            } else if (event == "error") {
+                playback_state_.connected = false;
+                playback_state_.reset();
+            }
         }
+    } catch (const std::exception &e) {
+        std::fprintf(stderr, "[Daedalus] Event handling error: %s\n", e.what());
+        console_log_.add(views::ConsoleEntryType::Error,
+                         std::string("Event handling error: ") + e.what(), json_str,
+                         playback_state_.last_sim_time);
     }
 }
 
