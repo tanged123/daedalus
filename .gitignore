@@ -70,6 +70,7 @@ result-*
 
 # Local runtime config
 Daedalus.ini
+*.dict 
 
 # Do not ignore beads
 !.beads

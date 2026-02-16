@@ -387,24 +387,19 @@ void TopologyView::render_toolbar() {
 
 void TopologyView::render_node(const TopologyNode &node,
                                const std::map<size_t, data::SignalBuffer> &buffers) {
-    namespace ed = ax::NodeEditor;
-
     ax::NodeEditor::BeginNode(ax::NodeEditor::NodeId(node.id));
 
-    ImGui::BeginGroup();
+    // Header: colored module name + signal count badge
     const ImVec4 header_color = module_header_color(node.module_name);
     ImGui::PushStyleColor(ImGuiCol_Text, header_color);
     ImGui::TextUnformatted(node.module_name.c_str());
     ImGui::PopStyleColor();
     ImGui::SameLine();
     ImGui::TextDisabled("  %zu sig", node.total_signal_count);
-    ImGui::EndGroup();
 
-    const ImVec2 header_min = ImGui::GetItemRectMin();
-    const ImVec2 header_max = ImGui::GetItemRectMax();
-    const float header_bottom = header_max.y + 4.0f;
-    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+    ImGui::Spacing();
 
+    // --- Pins ---
     for (const auto &pin : node.input_pins) {
         render_pin(pin, buffers);
     }
@@ -417,27 +412,6 @@ void TopologyView::render_node(const TopologyNode &node,
     }
 
     ax::NodeEditor::EndNode();
-
-    auto *draw_list = ax::NodeEditor::GetNodeBackgroundDrawList(ax::NodeEditor::NodeId(node.id));
-    if (draw_list != nullptr) {
-        constexpr float kPaddingY = 4.0f;
-        constexpr float kRounding = 4.0f;
-        const ImVec2 node_pos_canvas = ed::GetNodePosition(ed::NodeId(node.id));
-        const ImVec2 node_size_canvas = ed::GetNodeSize(ed::NodeId(node.id));
-        const ImVec2 node_min_screen = ed::CanvasToScreen(node_pos_canvas);
-        const ImVec2 node_max_screen = {
-            node_min_screen.x + node_size_canvas.x,
-            node_min_screen.y + node_size_canvas.y,
-        };
-        const ImVec2 bg_min = {node_min_screen.x, header_min.y - kPaddingY};
-        const ImVec2 bg_max = {node_max_screen.x, header_max.y + kPaddingY};
-        const ImU32 bg_color = ImGui::ColorConvertFloat4ToU32(
-            ImVec4(header_color.x, header_color.y, header_color.z, 0.15f));
-        const ImU32 divider_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
-        draw_list->AddRectFilled(bg_min, bg_max, bg_color, kRounding, ImDrawFlags_RoundCornersTop);
-        draw_list->AddLine({node_min_screen.x, header_bottom}, {node_max_screen.x, header_bottom},
-                           divider_color, 1.0f);
-    }
 }
 
 void TopologyView::render_pin(const TopologyPin &pin,
