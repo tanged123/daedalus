@@ -278,11 +278,7 @@ void TopologyGraph::clear() {
     links_.clear();
 }
 
-TopologyView::TopologyView() {
-    ax::NodeEditor::Config config;
-    config.SettingsFile = nullptr;
-    context_ = ax::NodeEditor::CreateEditor(&config);
-}
+TopologyView::TopologyView() = default;
 
 TopologyView::~TopologyView() {
     if (context_ != nullptr) {
@@ -292,6 +288,12 @@ TopologyView::~TopologyView() {
 
 void TopologyView::render(const TopologyGraph &graph,
                           const std::map<size_t, data::SignalBuffer> &buffers) {
+    if (context_ == nullptr) {
+        ax::NodeEditor::Config config;
+        config.SettingsFile = "";
+        context_ = ax::NodeEditor::CreateEditor(&config);
+    }
+
     render_toolbar();
 
     if (graph.empty()) {

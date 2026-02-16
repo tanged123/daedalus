@@ -1186,8 +1186,8 @@ add_executable(daedalus_tests
    - [ ] All Phase 1-3 features still work (no regressions)
 
 5. **Test suite**:
-   - [ ] `./scripts/test.sh` passes (all Phase 1-4 tests)
-   - [ ] `./scripts/ci.sh` passes (clean build + all tests)
+   - [x] `./scripts/test.sh` passes (all Phase 1-4 tests)
+   - [x] `./scripts/ci.sh` passes (clean build + all tests)
 
 **Acceptance**: Full Phase 4 feature set works end-to-end against live Hermes data with wiring.
 
@@ -1349,31 +1349,31 @@ Full interactive testing against live Hermes data:
 
 ## 10. Phase 4 Definition of Done
 
-- [ ] `WireInfo` struct added to schema types
-- [ ] `parse_schema()` extracts optional wiring array
-- [ ] ~6 new schema parsing tests for wiring
-- [ ] `TopologyGraph` builds nodes, pins, and links from schema
-- [ ] Graph correctly identifies wired vs. unwired signals
-- [ ] ~12 new graph construction tests
-- [ ] Auto-layout positions nodes in left-to-right layers
-- [ ] ~7 new layout algorithm tests
-- [ ] `TopologyView` renders module nodes with imgui-node-editor
-- [ ] Output pins on source signals, input pins on destination signals
-- [ ] Links drawn between wired pins with flow animation
-- [ ] Nodes are draggable (built into editor)
-- [ ] "Reset Layout" button re-applies auto-layout
-- [ ] "Fit to View" button navigates to content
-- [ ] Hover on pin shows signal path and current value
-- [ ] Hover on link shows wire details (src→dst, value, gain, offset)
-- [ ] Values update in real-time from signal buffers
-- [ ] Right-click module node shows context menu with "Inspect" option
-- [ ] Inspect sends command to Hermes (error expected, displayed in console)
-- [ ] Topology view tabbed with Plots in main dock space
-- [ ] No-wiring schema shows informative message (not empty/broken)
-- [ ] Reconnection rebuilds topology from new schema
-- [ ] All Phase 1-3 tests still pass (no regressions)
-- [ ] ~25 new unit tests for Phase 4
-- [ ] `./scripts/ci.sh` passes (clean build + all tests)
+- [x] `WireInfo` struct added to schema types
+- [x] `parse_schema()` extracts optional wiring array
+- [x] ~6 new schema parsing tests for wiring
+- [x] `TopologyGraph` builds nodes, pins, and links from schema
+- [x] Graph correctly identifies wired vs. unwired signals
+- [x] ~12 new graph construction tests
+- [x] Auto-layout positions nodes in left-to-right layers
+- [x] ~7 new layout algorithm tests
+- [x] `TopologyView` renders module nodes with imgui-node-editor
+- [x] Output pins on source signals, input pins on destination signals
+- [x] Links drawn between wired pins with flow animation
+- [x] Nodes are draggable (built into editor)
+- [x] "Reset Layout" button re-applies auto-layout
+- [x] "Fit to View" button navigates to content
+- [x] Hover on pin shows signal path and current value
+- [x] Hover on link shows wire details (src→dst, value, gain, offset)
+- [x] Values update in real-time from signal buffers
+- [x] Right-click module node shows context menu with "Inspect" option
+- [x] Inspect sends command to Hermes (error expected, displayed in console)
+- [x] Topology view tabbed with Plots in main dock space
+- [x] No-wiring schema shows informative message (not empty/broken)
+- [x] Reconnection rebuilds topology from new schema
+- [x] All Phase 1-3 tests still pass (no regressions)
+- [x] ~25 new unit tests for Phase 4
+- [x] `./scripts/ci.sh` passes (clean build + all tests)
 - [ ] End-to-end verification against `multi_module.yaml` (wiring)
 - [ ] End-to-end verification against `websocket_telemetry.yaml` (no wiring)
 

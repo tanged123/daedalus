@@ -17,19 +17,68 @@ if [ -z "${IN_NIX_SHELL:-}" ]; then
     exec "$SCRIPT_DIR/dev.sh" "$0" "$@"
 fi
 
-# ─── WSL2/WSLg display robustness ───────────────────────────────────────
-# GLFW 3.4 prefers Wayland when WAYLAND_DISPLAY is set. WSLg provides
-# both X11 and Wayland, but Wayland EGL context creation is unreliable —
-# causing the window to intermittently fail to appear.
-# Force X11 backend for consistent rendering.
-if [ -n "${WSL_DISTRO_NAME:-}" ]; then
-    export GLFW_PLATFORM=x11
-fi
-
-if [ -z "${DISPLAY:-}" ]; then
-    echo "ERROR: DISPLAY is not set. Ensure WSLg or an X server is running." >&2
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "ERROR: neither DISPLAY nor WAYLAND_DISPLAY is set. Ensure a GUI session is available." >&2
     exit 1
 fi
+
+socket_connectable() {
+    local socket_path="$1"
+    python - "$socket_path" <<'PY'
+import socket
+import sys
+
+path = sys.argv[1]
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(0.5)
+try:
+    sock.connect(path)
+except Exception:
+    sys.exit(1)
+finally:
+    sock.close()
+sys.exit(0)
+PY
+}
+
+detect_display_platform() {
+    local x11_ok=0
+    local wayland_ok=0
+
+    if [[ -n "${DISPLAY:-}" && "${DISPLAY}" =~ ^:([0-9]+) ]]; then
+        local x11_socket="/tmp/.X11-unix/X${BASH_REMATCH[1]}"
+        if [ -S "$x11_socket" ] && socket_connectable "$x11_socket"; then
+            x11_ok=1
+        fi
+    fi
+
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        local wl_socket="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+        if [ -S "$wl_socket" ] && socket_connectable "$wl_socket"; then
+            wayland_ok=1
+        fi
+    fi
+
+    if [ -z "${GLFW_PLATFORM:-}" ]; then
+        if [ "$wayland_ok" -eq 1 ]; then
+            export GLFW_PLATFORM=wayland
+        elif [ "$x11_ok" -eq 1 ]; then
+            export GLFW_PLATFORM=x11
+        fi
+    fi
+
+    if [ "$x11_ok" -eq 0 ] && [ "$wayland_ok" -eq 0 ]; then
+        echo "ERROR: no reachable GUI display backend." >&2
+        echo "  DISPLAY=${DISPLAY:-<unset>}" >&2
+        echo "  WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>}" >&2
+        echo "  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}" >&2
+        echo "Hint: restart your GUI session (WSLg/X server) and retry." >&2
+        exit 1
+    fi
+}
+
+detect_display_platform
+echo "Using GLFW_PLATFORM=${GLFW_PLATFORM:-<auto>}"
 
 # ─── Build ───────────────────────────────────────────────────────────────
 "$SCRIPT_DIR/build.sh"
