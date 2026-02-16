@@ -151,6 +151,23 @@ TEST(TopologyGraph, UnwiredSignalCountTracksSignalsNotInAnyWire) {
     EXPECT_EQ(physics->unwired_signal_count, 2u); // output, state
 }
 
+TEST(TopologyGraph, TotalSignalCountReflectsSchemaSize) {
+    Schema schema;
+    schema.modules.push_back(make_module("inputs", {"thrust_cmd", "pitch_cmd"}));
+    schema.modules.push_back(make_module("physics", {"input", "output", "state"}));
+    schema.wiring.push_back(WireInfo{"inputs.thrust_cmd", "physics.input", 1.0, 0.0});
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+
+    const TopologyNode *inputs = find_node(graph, "inputs");
+    const TopologyNode *physics = find_node(graph, "physics");
+    ASSERT_NE(inputs, nullptr);
+    ASSERT_NE(physics, nullptr);
+    EXPECT_EQ(inputs->total_signal_count, 2u);
+    EXPECT_EQ(physics->total_signal_count, 3u);
+}
+
 TEST(TopologyGraph, DuplicateSignalAcrossMultipleWiresCreatesSinglePin) {
     Schema schema;
     schema.modules.push_back(make_module("inputs", {"thrust_cmd"}));

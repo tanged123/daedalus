@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <map>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -37,6 +39,19 @@ std::string signal_name_from_path(const std::string &signal_path) {
 
 uint64_t edge_key(size_t src, size_t dst) {
     return (static_cast<uint64_t>(src) << 32U) | static_cast<uint64_t>(dst);
+}
+
+ImVec4 module_header_color(const std::string &name) {
+    uint32_t hash = 5381;
+    for (const char c : name) {
+        hash = ((hash << 5) + hash) + static_cast<uint32_t>(c);
+    }
+
+    const float hue = static_cast<float>(hash % 360U) / 360.0f;
+    ImVec4 color;
+    ImGui::ColorConvertHSVtoRGB(hue, 0.5f, 0.9f, color.x, color.y, color.z);
+    color.w = 1.0f;
+    return color;
 }
 
 } // namespace
@@ -140,6 +155,7 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
                 ++wired_count;
             }
         }
+        nodes_[i].total_signal_count = schema.modules[i].signals.size();
         nodes_[i].unwired_signal_count = schema.modules[i].signals.size() - wired_count;
     }
 
@@ -325,6 +341,7 @@ void TopologyView::render(const TopologyGraph &graph,
     }
 
     render_links(graph, buffers);
+    render_wire_labels(graph, buffers);
     handle_hover_tooltips(graph, buffers);
     handle_node_context_menu(graph);
 
@@ -370,12 +387,23 @@ void TopologyView::render_toolbar() {
 
 void TopologyView::render_node(const TopologyNode &node,
                                const std::map<size_t, data::SignalBuffer> &buffers) {
+    namespace ed = ax::NodeEditor;
+
     ax::NodeEditor::BeginNode(ax::NodeEditor::NodeId(node.id));
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.2f, 1.0f));
+    ImGui::BeginGroup();
+    const ImVec4 header_color = module_header_color(node.module_name);
+    ImGui::PushStyleColor(ImGuiCol_Text, header_color);
     ImGui::TextUnformatted(node.module_name.c_str());
     ImGui::PopStyleColor();
-    ImGui::Separator();
+    ImGui::SameLine();
+    ImGui::TextDisabled("  %zu sig", node.total_signal_count);
+    ImGui::EndGroup();
+
+    const ImVec2 header_min = ImGui::GetItemRectMin();
+    const ImVec2 header_max = ImGui::GetItemRectMax();
+    const float header_bottom = header_max.y + 4.0f;
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
     for (const auto &pin : node.input_pins) {
         render_pin(pin, buffers);
@@ -389,28 +417,56 @@ void TopologyView::render_node(const TopologyNode &node,
     }
 
     ax::NodeEditor::EndNode();
+
+    auto *draw_list = ax::NodeEditor::GetNodeBackgroundDrawList(ax::NodeEditor::NodeId(node.id));
+    if (draw_list != nullptr) {
+        constexpr float kPaddingY = 4.0f;
+        constexpr float kRounding = 4.0f;
+        const ImVec2 node_pos_canvas = ed::GetNodePosition(ed::NodeId(node.id));
+        const ImVec2 node_size_canvas = ed::GetNodeSize(ed::NodeId(node.id));
+        const ImVec2 node_min_screen = ed::CanvasToScreen(node_pos_canvas);
+        const ImVec2 node_max_screen = {
+            node_min_screen.x + node_size_canvas.x,
+            node_min_screen.y + node_size_canvas.y,
+        };
+        const ImVec2 bg_min = {node_min_screen.x, header_min.y - kPaddingY};
+        const ImVec2 bg_max = {node_max_screen.x, header_max.y + kPaddingY};
+        const ImU32 bg_color = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(header_color.x, header_color.y, header_color.z, 0.15f));
+        const ImU32 divider_color = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
+        draw_list->AddRectFilled(bg_min, bg_max, bg_color, kRounding, ImDrawFlags_RoundCornersTop);
+        draw_list->AddLine({node_min_screen.x, header_bottom}, {node_max_screen.x, header_bottom},
+                           divider_color, 1.0f);
+    }
 }
 
 void TopologyView::render_pin(const TopologyPin &pin,
                               const std::map<size_t, data::SignalBuffer> &buffers) {
     ax::NodeEditor::BeginPin(ax::NodeEditor::PinId(pin.id), pin.kind);
-    if (pin.kind == ax::NodeEditor::PinKind::Input) {
-        ImGui::Text("-> %s", pin.signal_name.c_str());
-    } else {
-        ImGui::Text("%s ->", pin.signal_name.c_str());
-    }
-    ax::NodeEditor::EndPin();
 
-    if (!pin.signal_index.has_value()) {
-        return;
-    }
-    const auto it = buffers.find(pin.signal_index.value());
-    if (it == buffers.end() || it->second.empty()) {
-        return;
-    }
+    const ImVec4 pin_color = (pin.kind == ax::NodeEditor::PinKind::Input)
+                                 ? ImVec4(0.4f, 0.7f, 1.0f, 1.0f)
+                                 : ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, pin_color);
+    ImGui::Bullet();
+    ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    ImGui::TextDisabled("%.4g", it->second.last_value());
+    ImGui::TextUnformatted(pin.signal_name.c_str());
+
+    ax::NodeEditor::EndPin();
+
+    if (pin.signal_index.has_value()) {
+        const auto it = buffers.find(pin.signal_index.value());
+        if (it != buffers.end() && !it->second.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("  %.4g", it->second.last_value());
+            if (pin.unit.has_value()) {
+                ImGui::SameLine(0.0f, 2.0f);
+                ImGui::TextDisabled("%s", pin.unit->c_str());
+            }
+        }
+    }
 }
 
 void TopologyView::render_links(const TopologyGraph &graph,
@@ -426,6 +482,66 @@ void TopologyView::render_links(const TopologyGraph &graph,
         if (telemetry_active) {
             ax::NodeEditor::Flow(ax::NodeEditor::LinkId(link.id));
         }
+    }
+}
+
+void TopologyView::render_wire_labels(const TopologyGraph &graph,
+                                      const std::map<size_t, data::SignalBuffer> & /*buffers*/) {
+    namespace ed = ax::NodeEditor;
+
+    std::unordered_map<uintptr_t, uintptr_t> pin_to_node;
+    for (const auto &node : graph.nodes()) {
+        for (const auto &pin : node.input_pins) {
+            pin_to_node[pin.id] = node.id;
+        }
+        for (const auto &pin : node.output_pins) {
+            pin_to_node[pin.id] = node.id;
+        }
+    }
+
+    for (const auto &link : graph.links()) {
+        if (link.gain == 1.0 && link.offset == 0.0) {
+            continue;
+        }
+
+        const auto src_it = pin_to_node.find(link.source_pin_id);
+        const auto dst_it = pin_to_node.find(link.dest_pin_id);
+        if (src_it == pin_to_node.end() || dst_it == pin_to_node.end()) {
+            continue;
+        }
+
+        const ed::NodeId src_node_id(src_it->second);
+        const ed::NodeId dst_node_id(dst_it->second);
+
+        const ImVec2 src_pos = ed::GetNodePosition(src_node_id);
+        const ImVec2 src_size = ed::GetNodeSize(src_node_id);
+        const ImVec2 dst_pos = ed::GetNodePosition(dst_node_id);
+        const ImVec2 dst_size = ed::GetNodeSize(dst_node_id);
+
+        const ImVec2 src_point = {src_pos.x + src_size.x, src_pos.y + src_size.y * 0.5f};
+        const ImVec2 dst_point = {dst_pos.x, dst_pos.y + dst_size.y * 0.5f};
+        const ImVec2 midpoint_canvas = {
+            (src_point.x + dst_point.x) * 0.5f,
+            (src_point.y + dst_point.y) * 0.5f,
+        };
+        const ImVec2 midpoint_screen = ed::CanvasToScreen(midpoint_canvas);
+
+        char label[64];
+        if (link.offset != 0.0) {
+            std::snprintf(label, sizeof(label), "x%.4g %+.4g", link.gain, link.offset);
+        } else {
+            std::snprintf(label, sizeof(label), "x%.4g", link.gain);
+        }
+
+        const ImVec2 text_size = ImGui::CalcTextSize(label);
+
+        ed::Suspend();
+        ImGui::SetCursorScreenPos(
+            {midpoint_screen.x - text_size.x * 0.5f, midpoint_screen.y - text_size.y * 0.5f});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.3f, 0.9f));
+        ImGui::TextUnformatted(label);
+        ImGui::PopStyleColor();
+        ed::Resume();
     }
 }
 
@@ -447,7 +563,7 @@ void TopologyView::handle_hover_tooltips(const TopologyGraph &graph,
         return nullptr;
     };
 
-    auto hovered_link = ax::NodeEditor::GetHoveredLink();
+    const auto hovered_link = ax::NodeEditor::GetHoveredLink();
     if (hovered_link) {
         for (const auto &link : graph.links()) {
             if (link.id != hovered_link.Get()) {
@@ -479,32 +595,48 @@ void TopologyView::handle_hover_tooltips(const TopologyGraph &graph,
         }
     }
 
-    auto hovered_pin = ax::NodeEditor::GetHoveredPin();
-    if (!hovered_pin) {
-        return;
+    const auto hovered_pin = ax::NodeEditor::GetHoveredPin();
+    if (hovered_pin) {
+        const TopologyPin *pin = find_pin_by_id(hovered_pin.Get());
+        if (pin != nullptr) {
+            ax::NodeEditor::Suspend();
+            ImGui::BeginTooltip();
+            ImGui::Text("%s", pin->signal_path.c_str());
+            if (pin->signal_index.has_value()) {
+                const auto it = buffers.find(pin->signal_index.value());
+                if (it != buffers.end() && !it->second.empty()) {
+                    ImGui::SameLine();
+                    ImGui::Text("= %.6g", it->second.last_value());
+                    if (pin->unit.has_value()) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("%s", pin->unit->c_str());
+                    }
+                }
+            }
+            ImGui::EndTooltip();
+            ax::NodeEditor::Resume();
+        }
     }
 
-    const TopologyPin *pin = find_pin_by_id(hovered_pin.Get());
-    if (pin == nullptr) {
-        return;
-    }
+    if (!hovered_pin && !hovered_link) {
+        const auto hovered_node = ax::NodeEditor::GetHoveredNode();
+        if (hovered_node) {
+            for (const auto &node : graph.nodes()) {
+                if (node.id != hovered_node.Get()) {
+                    continue;
+                }
+                const size_t wired_count = node.input_pins.size() + node.output_pins.size();
 
-    ax::NodeEditor::Suspend();
-    ImGui::BeginTooltip();
-    ImGui::Text("%s", pin->signal_path.c_str());
-    if (pin->signal_index.has_value()) {
-        const auto it = buffers.find(pin->signal_index.value());
-        if (it != buffers.end() && !it->second.empty()) {
-            ImGui::SameLine();
-            ImGui::Text("= %.6g", it->second.last_value());
-            if (pin->unit.has_value()) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", pin->unit->c_str());
+                ax::NodeEditor::Suspend();
+                ImGui::BeginTooltip();
+                ImGui::Text("Module: %s", node.module_name.c_str());
+                ImGui::Text("Signals: %zu (%zu wired)", node.total_signal_count, wired_count);
+                ImGui::EndTooltip();
+                ax::NodeEditor::Resume();
+                break;
             }
         }
     }
-    ImGui::EndTooltip();
-    ax::NodeEditor::Resume();
 }
 
 void TopologyView::handle_node_context_menu(const TopologyGraph &graph) {

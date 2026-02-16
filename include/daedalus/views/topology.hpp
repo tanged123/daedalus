@@ -32,6 +32,7 @@ struct TopologyNode {
     std::vector<TopologyPin> input_pins;
     std::vector<TopologyPin> output_pins;
     size_t unwired_signal_count = 0;
+    size_t total_signal_count = 0;
 };
 
 struct TopologyLink {
@@ -88,6 +89,8 @@ class TopologyView {
     void render_pin(const TopologyPin &pin, const std::map<size_t, data::SignalBuffer> &buffers);
     void render_links(const TopologyGraph &graph,
                       const std::map<size_t, data::SignalBuffer> &buffers);
+    void render_wire_labels(const TopologyGraph &graph,
+                            const std::map<size_t, data::SignalBuffer> &buffers);
     void handle_hover_tooltips(const TopologyGraph &graph,
                                const std::map<size_t, data::SignalBuffer> &buffers);
     void handle_node_context_menu(const TopologyGraph &graph);
