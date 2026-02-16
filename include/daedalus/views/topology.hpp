@@ -11,6 +11,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -33,6 +34,9 @@ struct TopologyNode {
     std::vector<TopologyPin> output_pins;
     size_t unwired_signal_count = 0;
     size_t total_signal_count = 0;
+    std::optional<std::string> module_type;
+    std::optional<bool> supports_introspection;
+    std::optional<size_t> component_count;
 };
 
 struct TopologyLink {
@@ -50,7 +54,11 @@ class TopologyGraph {
     void build_from_schema(const protocol::Schema &schema);
     void compute_layout();
     void update_subscription(const protocol::SubscribeAck &ack);
+    void update_subscription_with_prefix(const protocol::SubscribeAck &ack,
+                                         std::string_view prefix);
     void update_units(const std::unordered_map<std::string, std::string> &units);
+    void update_units_with_prefix(const std::unordered_map<std::string, std::string> &units,
+                                  std::string_view prefix);
     void clear();
 
     [[nodiscard]] const std::vector<TopologyNode> &nodes() const { return nodes_; }

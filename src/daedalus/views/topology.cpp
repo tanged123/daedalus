@@ -18,7 +18,33 @@ struct PathParts {
     std::string signal;
 };
 
-std::optional<PathParts> split_signal_path(const std::string &signal_path) {
+bool starts_with(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+std::optional<PathParts>
+split_signal_path(const std::string &signal_path,
+                  const std::unordered_map<std::string, size_t> *module_to_index = nullptr) {
+    if (module_to_index != nullptr && !module_to_index->empty()) {
+        size_t best_module_len = 0;
+        std::string best_module;
+        for (const auto &[module_name, index] : *module_to_index) {
+            (void)index;
+            const std::string prefix = module_name + ".";
+            if (starts_with(signal_path, prefix) && module_name.size() > best_module_len) {
+                best_module_len = module_name.size();
+                best_module = module_name;
+            }
+        }
+
+        if (!best_module.empty() && signal_path.size() > best_module_len + 1) {
+            return PathParts{
+                .module = best_module,
+                .signal = signal_path.substr(best_module_len + 1),
+            };
+        }
+    }
+
     const size_t dot = signal_path.find('.');
     if (dot == std::string::npos || dot == 0 || dot + 1 >= signal_path.size()) {
         return std::nullopt;
@@ -27,14 +53,6 @@ std::optional<PathParts> split_signal_path(const std::string &signal_path) {
         .module = signal_path.substr(0, dot),
         .signal = signal_path.substr(dot + 1),
     };
-}
-
-std::string signal_name_from_path(const std::string &signal_path) {
-    const size_t dot = signal_path.find('.');
-    if (dot == std::string::npos || dot + 1 >= signal_path.size()) {
-        return signal_path;
-    }
-    return signal_path.substr(dot + 1);
 }
 
 uint64_t edge_key(size_t src, size_t dst) {
@@ -81,11 +99,15 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         TopologyNode node;
         node.id = kNodeIdBase + i;
         node.module_name = schema.modules[i].name;
+        node.module_type = schema.modules[i].module_type;
+        node.supports_introspection = schema.modules[i].supports_introspection;
+        node.component_count = schema.modules[i].component_count;
         nodes_.push_back(std::move(node));
         module_to_index.emplace(schema.modules[i].name, i);
     }
 
     auto get_or_create_pin_id = [&](size_t module_index, const std::string &signal_path,
+                                    const std::string &signal_name,
                                     ax::NodeEditor::PinKind kind) -> uintptr_t {
         auto &state = pin_state[module_index];
         auto &signal_map = (kind == ax::NodeEditor::PinKind::Input) ? state.input_pin_by_signal
@@ -101,7 +123,7 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         TopologyPin pin;
         pin.id = pin_id;
         pin.signal_path = signal_path;
-        pin.signal_name = signal_name_from_path(signal_path);
+        pin.signal_name = signal_name;
         pin.kind = kind;
 
         auto &node = nodes_[module_index];
@@ -117,8 +139,8 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
 
     links_.reserve(schema.wiring.size());
     for (const auto &wire : schema.wiring) {
-        const auto src = split_signal_path(wire.src);
-        const auto dst = split_signal_path(wire.dst);
+        const auto src = split_signal_path(wire.src, &module_to_index);
+        const auto dst = split_signal_path(wire.dst, &module_to_index);
         if (!src.has_value() || !dst.has_value()) {
             continue;
         }
@@ -141,10 +163,10 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         link.dest_signal = wire.dst;
         link.gain = wire.gain;
         link.offset = wire.offset;
-        link.source_pin_id =
-            get_or_create_pin_id(src_module_index, wire.src, ax::NodeEditor::PinKind::Output);
-        link.dest_pin_id =
-            get_or_create_pin_id(dst_module_index, wire.dst, ax::NodeEditor::PinKind::Input);
+        link.source_pin_id = get_or_create_pin_id(src_module_index, wire.src, src->signal,
+                                                  ax::NodeEditor::PinKind::Output);
+        link.dest_pin_id = get_or_create_pin_id(dst_module_index, wire.dst, dst->signal,
+                                                ax::NodeEditor::PinKind::Input);
         links_.push_back(std::move(link));
     }
 
@@ -167,32 +189,29 @@ void TopologyGraph::compute_layout() {
         return;
     }
 
-    std::unordered_map<std::string, size_t> name_to_index;
-    name_to_index.reserve(nodes_.size());
-    for (size_t i = 0; i < nodes_.size(); ++i) {
-        name_to_index.emplace(nodes_[i].module_name, i);
-    }
-
     std::vector<std::vector<size_t>> adjacency(nodes_.size());
     std::vector<int> in_degree(nodes_.size(), 0);
     std::unordered_set<uint64_t> seen_edges;
     seen_edges.reserve(links_.size());
+    std::unordered_map<uintptr_t, size_t> pin_to_node;
+    for (size_t i = 0; i < nodes_.size(); ++i) {
+        for (const auto &pin : nodes_[i].input_pins) {
+            pin_to_node.emplace(pin.id, i);
+        }
+        for (const auto &pin : nodes_[i].output_pins) {
+            pin_to_node.emplace(pin.id, i);
+        }
+    }
 
     for (const auto &link : links_) {
-        const auto src = split_signal_path(link.source_signal);
-        const auto dst = split_signal_path(link.dest_signal);
-        if (!src.has_value() || !dst.has_value()) {
+        const auto src_it = pin_to_node.find(link.source_pin_id);
+        const auto dst_it = pin_to_node.find(link.dest_pin_id);
+        if (src_it == pin_to_node.end() || dst_it == pin_to_node.end()) {
             continue;
         }
 
-        const auto src_module_it = name_to_index.find(src->module);
-        const auto dst_module_it = name_to_index.find(dst->module);
-        if (src_module_it == name_to_index.end() || dst_module_it == name_to_index.end()) {
-            continue;
-        }
-
-        const size_t src_index = src_module_it->second;
-        const size_t dst_index = dst_module_it->second;
+        const size_t src_index = src_it->second;
+        const size_t dst_index = dst_it->second;
         const uint64_t key = edge_key(src_index, dst_index);
         if (seen_edges.contains(key)) {
             continue;
@@ -246,10 +265,26 @@ void TopologyGraph::compute_layout() {
 }
 
 void TopologyGraph::update_subscription(const protocol::SubscribeAck &ack) {
+    update_subscription_with_prefix(ack, "");
+}
+
+void TopologyGraph::update_subscription_with_prefix(const protocol::SubscribeAck &ack,
+                                                    std::string_view prefix) {
     std::unordered_map<std::string, size_t> index_by_signal;
     index_by_signal.reserve(ack.signals.size());
+    const std::string prefix_str(prefix);
     for (size_t i = 0; i < ack.signals.size(); ++i) {
-        index_by_signal.emplace(ack.signals[i], i);
+        if (prefix_str.empty()) {
+            index_by_signal.emplace(ack.signals[i], i);
+            continue;
+        }
+
+        if (!starts_with(ack.signals[i], prefix_str) ||
+            ack.signals[i].size() <= prefix_str.size()) {
+            continue;
+        }
+
+        index_by_signal.emplace(ack.signals[i].substr(prefix_str.size()), i);
     }
 
     for (auto &node : nodes_) {
@@ -271,18 +306,38 @@ void TopologyGraph::update_subscription(const protocol::SubscribeAck &ack) {
 }
 
 void TopologyGraph::update_units(const std::unordered_map<std::string, std::string> &units) {
+    update_units_with_prefix(units, "");
+}
+
+void TopologyGraph::update_units_with_prefix(
+    const std::unordered_map<std::string, std::string> &units, std::string_view prefix) {
+    std::unordered_map<std::string, std::string> units_by_signal;
+    units_by_signal.reserve(units.size());
+    const std::string prefix_str(prefix);
+    for (const auto &[signal_path, unit] : units) {
+        if (prefix_str.empty()) {
+            units_by_signal.emplace(signal_path, unit);
+            continue;
+        }
+
+        if (!starts_with(signal_path, prefix_str) || signal_path.size() <= prefix_str.size()) {
+            continue;
+        }
+        units_by_signal.emplace(signal_path.substr(prefix_str.size()), unit);
+    }
+
     for (auto &node : nodes_) {
         for (auto &pin : node.input_pins) {
             pin.unit.reset();
-            const auto it = units.find(pin.signal_path);
-            if (it != units.end()) {
+            const auto it = units_by_signal.find(pin.signal_path);
+            if (it != units_by_signal.end()) {
                 pin.unit = it->second;
             }
         }
         for (auto &pin : node.output_pins) {
             pin.unit.reset();
-            const auto it = units.find(pin.signal_path);
-            if (it != units.end()) {
+            const auto it = units_by_signal.find(pin.signal_path);
+            if (it != units_by_signal.end()) {
                 pin.unit = it->second;
             }
         }
@@ -605,6 +660,21 @@ void TopologyView::handle_hover_tooltips(const TopologyGraph &graph,
                 ImGui::BeginTooltip();
                 ImGui::Text("Module: %s", node.module_name.c_str());
                 ImGui::Text("Signals: %zu (%zu wired)", node.total_signal_count, wired_count);
+                if (node.module_type.has_value()) {
+                    ImGui::Text("Type: %s", node.module_type->c_str());
+                }
+                if (node.supports_introspection.has_value()) {
+                    if (node.supports_introspection.value()) {
+                        ImGui::TextDisabled("Introspection: available");
+                        if (node.component_count.has_value()) {
+                            ImGui::TextDisabled("Components: %zu", node.component_count.value());
+                        }
+                    } else {
+                        ImGui::TextDisabled("Introspection: unavailable");
+                    }
+                } else {
+                    ImGui::TextDisabled("Introspection: unknown");
+                }
                 ImGui::EndTooltip();
                 ax::NodeEditor::Resume();
                 break;
@@ -626,23 +696,49 @@ void TopologyView::handle_node_context_menu(const TopologyGraph &graph) {
     }
 
     if (ImGui::BeginPopup("TopologyNodeContextMenu")) {
-        std::string module_name = "Unknown";
+        const TopologyNode *selected_node = nullptr;
         for (const auto &node : graph.nodes()) {
             if (node.id == context_node_id_.Get()) {
-                module_name = node.module_name;
+                selected_node = &node;
                 break;
             }
         }
 
+        const std::string module_name =
+            (selected_node != nullptr) ? selected_node->module_name : "Unknown";
+
         ImGui::TextDisabled("Module: %s", module_name.c_str());
+        if (selected_node != nullptr && selected_node->module_type.has_value()) {
+            ImGui::TextDisabled("Type: %s", selected_node->module_type->c_str());
+        }
         ImGui::Separator();
-        if (ImGui::MenuItem("Inspect (requires Hermes support)") && inspect_callback_) {
+        if (selected_node != nullptr && selected_node->supports_introspection.has_value() &&
+            !selected_node->supports_introspection.value()) {
+            ImGui::BeginDisabled(true);
+            (void)ImGui::MenuItem("Introspect module");
+            ImGui::EndDisabled();
+        } else if (selected_node != nullptr && ImGui::MenuItem("Introspect module") &&
+                   inspect_callback_) {
             inspect_callback_(module_name);
         }
         if (ImGui::MenuItem("Navigate to Content")) {
             ax::NodeEditor::NavigateToContent(0.35f);
         }
         ImGui::EndPopup();
+    }
+
+    const auto hovered_node = ax::NodeEditor::GetHoveredNode();
+    if (hovered_node && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && inspect_callback_) {
+        for (const auto &node : graph.nodes()) {
+            if (node.id != hovered_node.Get()) {
+                continue;
+            }
+            if (node.supports_introspection.has_value() && !node.supports_introspection.value()) {
+                break;
+            }
+            inspect_callback_(node.module_name);
+            break;
+        }
     }
     ax::NodeEditor::Resume();
 }

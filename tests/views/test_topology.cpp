@@ -104,6 +104,25 @@ TEST(TopologyGraph, PinDirectionMatchesWireEndpoints) {
     EXPECT_EQ(physics->input_pins[0].signal_path, "physics.input");
 }
 
+TEST(TopologyGraph, HandlesModuleNamesWithDots) {
+    Schema schema;
+    schema.modules.push_back(make_module("Rocket.Engine", {"thrust"}));
+    schema.modules.push_back(make_module("Rocket.Body", {"force.x"}));
+    schema.wiring.push_back(WireInfo{"Rocket.Engine.thrust", "Rocket.Body.force.x", 1.0, 0.0});
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+
+    const TopologyNode *engine = find_node(graph, "Rocket.Engine");
+    const TopologyNode *body = find_node(graph, "Rocket.Body");
+    ASSERT_NE(engine, nullptr);
+    ASSERT_NE(body, nullptr);
+    ASSERT_EQ(engine->output_pins.size(), 1u);
+    ASSERT_EQ(body->input_pins.size(), 1u);
+    EXPECT_EQ(engine->output_pins[0].signal_name, "thrust");
+    EXPECT_EQ(body->input_pins[0].signal_name, "force.x");
+}
+
 TEST(TopologyGraph, LinkReferencesValidPinIds) {
     Schema schema;
     schema.modules.push_back(make_module("inputs", {"thrust_cmd"}));
@@ -166,6 +185,25 @@ TEST(TopologyGraph, TotalSignalCountReflectsSchemaSize) {
     ASSERT_NE(physics, nullptr);
     EXPECT_EQ(inputs->total_signal_count, 2u);
     EXPECT_EQ(physics->total_signal_count, 3u);
+}
+
+TEST(TopologyGraph, CarriesModuleIntrospectionMetadata) {
+    Schema schema;
+    schema.modules.push_back(make_module("rocket", {"state"}));
+    schema.modules[0].module_type = "icarus";
+    schema.modules[0].supports_introspection = true;
+    schema.modules[0].component_count = 5;
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+
+    ASSERT_EQ(graph.nodes().size(), 1u);
+    EXPECT_TRUE(graph.nodes()[0].module_type.has_value());
+    EXPECT_TRUE(graph.nodes()[0].supports_introspection.has_value());
+    EXPECT_TRUE(graph.nodes()[0].component_count.has_value());
+    EXPECT_EQ(graph.nodes()[0].module_type.value(), "icarus");
+    EXPECT_TRUE(graph.nodes()[0].supports_introspection.value());
+    EXPECT_EQ(graph.nodes()[0].component_count.value(), 5u);
 }
 
 TEST(TopologyGraph, DuplicateSignalAcrossMultipleWiresCreatesSinglePin) {
@@ -242,6 +280,36 @@ TEST(TopologyGraph, UpdateSubscriptionAssignsSignalIndicesToMatchingPins) {
     EXPECT_EQ(physics->input_pins[0].signal_index.value(), 0u);
 }
 
+TEST(TopologyGraph, UpdateSubscriptionWithPrefixAssignsOriginalIndices) {
+    Schema schema;
+    schema.modules.push_back(make_module("Rocket.Engine", {"thrust"}));
+    schema.modules.push_back(make_module("Rocket.Body", {"force.x"}));
+    schema.wiring.push_back(WireInfo{"Rocket.Engine.thrust", "Rocket.Body.force.x", 1.0, 0.0});
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+
+    SubscribeAck ack;
+    ack.count = 3;
+    ack.signals = {
+        "inputs.external",
+        "rocket.Rocket.Body.force.x",
+        "rocket.Rocket.Engine.thrust",
+    };
+    graph.update_subscription_with_prefix(ack, "rocket.");
+
+    const TopologyNode *engine = find_node(graph, "Rocket.Engine");
+    const TopologyNode *body = find_node(graph, "Rocket.Body");
+    ASSERT_NE(engine, nullptr);
+    ASSERT_NE(body, nullptr);
+    ASSERT_EQ(engine->output_pins.size(), 1u);
+    ASSERT_EQ(body->input_pins.size(), 1u);
+    ASSERT_TRUE(engine->output_pins[0].signal_index.has_value());
+    ASSERT_TRUE(body->input_pins[0].signal_index.has_value());
+    EXPECT_EQ(engine->output_pins[0].signal_index.value(), 2u);
+    EXPECT_EQ(body->input_pins[0].signal_index.value(), 1u);
+}
+
 TEST(TopologyGraph, UpdateUnitsAssignsUnitBySignalPath) {
     Schema schema;
     schema.modules.push_back(make_module("inputs", {"thrust_cmd"}));
@@ -265,6 +333,34 @@ TEST(TopologyGraph, UpdateUnitsAssignsUnitBySignalPath) {
     ASSERT_TRUE(physics->input_pins[0].unit.has_value());
     EXPECT_EQ(inputs->output_pins[0].unit.value(), "N");
     EXPECT_EQ(physics->input_pins[0].unit.value(), "N");
+}
+
+TEST(TopologyGraph, UpdateUnitsWithPrefixStripsModulePrefix) {
+    Schema schema;
+    schema.modules.push_back(make_module("Rocket.Engine", {"thrust"}));
+    schema.modules.push_back(make_module("Rocket.Body", {"force.x"}));
+    schema.wiring.push_back(WireInfo{"Rocket.Engine.thrust", "Rocket.Body.force.x", 1.0, 0.0});
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+    graph.update_units_with_prefix(
+        {
+            {"rocket.Rocket.Engine.thrust", "N"},
+            {"rocket.Rocket.Body.force.x", "N"},
+            {"other.signal", "m"},
+        },
+        "rocket.");
+
+    const TopologyNode *engine = find_node(graph, "Rocket.Engine");
+    const TopologyNode *body = find_node(graph, "Rocket.Body");
+    ASSERT_NE(engine, nullptr);
+    ASSERT_NE(body, nullptr);
+    ASSERT_EQ(engine->output_pins.size(), 1u);
+    ASSERT_EQ(body->input_pins.size(), 1u);
+    ASSERT_TRUE(engine->output_pins[0].unit.has_value());
+    ASSERT_TRUE(body->input_pins[0].unit.has_value());
+    EXPECT_EQ(engine->output_pins[0].unit.value(), "N");
+    EXPECT_EQ(body->input_pins[0].unit.value(), "N");
 }
 
 TEST(TopologyGraphLayout, SingleModuleAtOrigin) {
