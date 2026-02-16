@@ -19,8 +19,16 @@ struct ModuleInfo {
     std::vector<SignalInfo> signals;
 };
 
+struct WireInfo {
+    std::string src;
+    std::string dst;
+    double gain = 1.0;
+    double offset = 0.0;
+};
+
 struct Schema {
     std::vector<ModuleInfo> modules;
+    std::vector<WireInfo> wiring;
 };
 
 struct SubscribeAck {

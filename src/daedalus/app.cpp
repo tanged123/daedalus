@@ -108,6 +108,17 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
             client_->send_command(action, params);
             console_log_.add_command(action, params);
         });
+    topology_view_.set_inspect_callback([this](const std::string &module_name) {
+        if (client_ != nullptr && playback_state_.connected &&
+            client_->state() == protocol::ConnectionState::Connected) {
+            client_->send_command("inspect", {{"module", module_name}});
+            console_log_.add_command("inspect", {{"module", module_name}});
+            return;
+        }
+
+        console_log_.add(views::ConsoleEntryType::System, "Inspect skipped: not connected", "",
+                         playback_state_.last_sim_time);
+    });
 
     // Set up Hello ImGui runner params
     HelloImGui::RunnerParams runner_params;
@@ -164,12 +175,22 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     plots_window.dockSpaceName = "MainDockSpace";
     plots_window.GuiFunction = [this] { render_plot_workspace(); };
 
+    HelloImGui::DockableWindow topology_window;
+    topology_window.label = "Topology";
+    topology_window.dockSpaceName = "MainDockSpace";
+    topology_window.GuiFunction = [this] { render_topology(); };
+
     HelloImGui::DockableWindow console_window;
     console_window.label = "Console";
     console_window.dockSpaceName = "ConsoleSpace";
     console_window.GuiFunction = [this] { render_console(); };
 
-    runner_params.dockingParams.dockableWindows = {signals_window, plots_window, console_window};
+    runner_params.dockingParams.dockableWindows = {
+        signals_window,
+        plots_window,
+        topology_window,
+        console_window,
+    };
 
     // Status bar: connection status
     runner_params.callbacks.ShowStatus = [this] { render_connection_status(); };
@@ -237,6 +258,9 @@ void App::handle_event(const std::string &json_str) {
                     signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
                 }
             }
+            topology_graph_.build_from_schema(current_schema_);
+            topology_graph_.update_units(signal_units_);
+            topology_view_.reset();
             schema_received_ = true;
 
             // Auto-subscribe to all signals
@@ -248,6 +272,7 @@ void App::handle_event(const std::string &json_str) {
             if (action == "subscribe") {
                 auto ack = protocol::parse_subscribe_ack(msg);
                 signal_tree_.update_subscription(ack);
+                topology_graph_.update_subscription(ack);
 
                 // Create signal buffers for each subscribed signal
                 subscribed_signals_ = ack.signals;
@@ -275,8 +300,10 @@ void App::handle_event(const std::string &json_str) {
                 signal_buffers_.clear();
                 signal_units_.clear();
                 signal_tree_.clear();
+                topology_graph_.clear();
                 plot_manager_.clear_panel_signals();
                 signal_inspector_.reset();
+                topology_view_.reset();
             } else if (event == "error") {
                 playback_state_.connected = false;
                 playback_state_.reset();
@@ -498,6 +525,8 @@ void App::render_plot_workspace() {
     plot_manager_.render_toolbar();
     plot_manager_.render(signal_buffers_);
 }
+
+void App::render_topology() { topology_view_.render(topology_graph_, signal_buffers_); }
 
 void App::render_console() { console_view_.render(console_log_); }
 

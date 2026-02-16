@@ -92,6 +92,121 @@ TEST(SchemaParser, EmptyModules) {
 
     auto schema = parse_schema(msg);
     EXPECT_TRUE(schema.modules.empty());
+    EXPECT_TRUE(schema.wiring.empty());
+}
+
+TEST(SchemaParser, ParsesWiringEntries) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {
+                "signals": [{"name": "thrust_cmd", "type": "f64", "unit": "N"}]
+            },
+            "physics": {
+                "signals": [{"name": "input", "type": "f64"}]
+            }
+        },
+        "wiring": [
+            {
+                "src": "inputs.thrust_cmd",
+                "dst": "physics.input",
+                "gain": 2.0,
+                "offset": -1.25
+            }
+        ]
+    })");
+
+    auto schema = parse_schema(msg);
+    ASSERT_EQ(schema.wiring.size(), 1u);
+    EXPECT_EQ(schema.wiring[0].src, "inputs.thrust_cmd");
+    EXPECT_EQ(schema.wiring[0].dst, "physics.input");
+    EXPECT_DOUBLE_EQ(schema.wiring[0].gain, 2.0);
+    EXPECT_DOUBLE_EQ(schema.wiring[0].offset, -1.25);
+}
+
+TEST(SchemaParser, MissingWiringDefaultsToEmpty) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {
+                "signals": [{"name": "thrust_cmd", "type": "f64"}]
+            }
+        }
+    })");
+
+    auto schema = parse_schema(msg);
+    EXPECT_TRUE(schema.wiring.empty());
+}
+
+TEST(SchemaParser, EmptyWiringArray) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {
+                "signals": [{"name": "thrust_cmd", "type": "f64"}]
+            }
+        },
+        "wiring": []
+    })");
+
+    auto schema = parse_schema(msg);
+    EXPECT_TRUE(schema.wiring.empty());
+}
+
+TEST(SchemaParser, WiringGainAndOffsetDefaultValues) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {"signals": [{"name": "thrust_cmd", "type": "f64"}]},
+            "physics": {"signals": [{"name": "input", "type": "f64"}]}
+        },
+        "wiring": [
+            {"src": "inputs.thrust_cmd", "dst": "physics.input"}
+        ]
+    })");
+
+    auto schema = parse_schema(msg);
+    ASSERT_EQ(schema.wiring.size(), 1u);
+    EXPECT_DOUBLE_EQ(schema.wiring[0].gain, 1.0);
+    EXPECT_DOUBLE_EQ(schema.wiring[0].offset, 0.0);
+}
+
+TEST(SchemaParser, MalformedWireMissingSourceIsSkipped) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {"signals": [{"name": "thrust_cmd", "type": "f64"}]},
+            "physics": {"signals": [{"name": "input", "type": "f64"}]}
+        },
+        "wiring": [
+            {"dst": "physics.input"},
+            {"src": "inputs.thrust_cmd", "dst": "physics.input"}
+        ]
+    })");
+
+    auto schema = parse_schema(msg);
+    ASSERT_EQ(schema.wiring.size(), 1u);
+    EXPECT_EQ(schema.wiring[0].src, "inputs.thrust_cmd");
+    EXPECT_EQ(schema.wiring[0].dst, "physics.input");
+}
+
+TEST(SchemaParser, MalformedWireMissingDestinationIsSkipped) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {"signals": [{"name": "thrust_cmd", "type": "f64"}]},
+            "physics": {"signals": [{"name": "input", "type": "f64"}]}
+        },
+        "wiring": [
+            {"src": "inputs.thrust_cmd"},
+            {"src": "inputs.thrust_cmd", "dst": "physics.input"}
+        ]
+    })");
+
+    auto schema = parse_schema(msg);
+    ASSERT_EQ(schema.wiring.size(), 1u);
+    EXPECT_EQ(schema.wiring[0].src, "inputs.thrust_cmd");
+    EXPECT_EQ(schema.wiring[0].dst, "physics.input");
 }
 
 TEST(SchemaParser, MissingType) {

@@ -8,6 +8,7 @@
 #include "daedalus/views/controls.hpp"
 #include "daedalus/views/inspector.hpp"
 #include "daedalus/views/plotter.hpp"
+#include "daedalus/views/topology.hpp"
 
 #include <map>
 #include <memory>
@@ -43,6 +44,7 @@ class App {
     void render_signal_tree();
     void render_signal_tree_node(const data::SignalTreeNode &node, std::string_view filter);
     void render_plot_workspace();
+    void render_topology();
     void render_console();
 
     /// Handle a parsed JSON event from the event queue.
@@ -60,6 +62,8 @@ class App {
     views::ConsoleView console_view_;
     views::PlaybackState playback_state_;
     views::SignalInspector signal_inspector_;
+    views::TopologyGraph topology_graph_;
+    views::TopologyView topology_view_;
     std::string server_url_ = "ws://127.0.0.1:8765";
     bool schema_received_ = false;
     std::optional<bool> tree_open_state_request_;

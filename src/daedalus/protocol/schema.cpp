@@ -42,6 +42,31 @@ Schema parse_schema(const nlohmann::json &msg) {
         schema.modules.push_back(std::move(mod));
     }
 
+    if (msg.contains("wiring") && msg["wiring"].is_array()) {
+        for (const auto &wire_json : msg["wiring"]) {
+            if (!wire_json.is_object()) {
+                continue;
+            }
+            if (!wire_json.contains("src") || !wire_json["src"].is_string()) {
+                continue;
+            }
+            if (!wire_json.contains("dst") || !wire_json["dst"].is_string()) {
+                continue;
+            }
+
+            WireInfo wire;
+            wire.src = wire_json["src"].get<std::string>();
+            wire.dst = wire_json["dst"].get<std::string>();
+            if (wire_json.contains("gain") && wire_json["gain"].is_number()) {
+                wire.gain = wire_json["gain"].get<double>();
+            }
+            if (wire_json.contains("offset") && wire_json["offset"].is_number()) {
+                wire.offset = wire_json["offset"].get<double>();
+            }
+            schema.wiring.push_back(std::move(wire));
+        }
+    }
+
     return schema;
 }
 
