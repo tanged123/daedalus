@@ -148,6 +148,13 @@ Schema parse_schema(const nlohmann::json &msg) {
                 mod.component_count = static_cast<size_t>(value);
             }
         }
+        if (mod_data.contains("edge_count") && (mod_data["edge_count"].is_number_unsigned() ||
+                                                mod_data["edge_count"].is_number_integer())) {
+            const auto value = mod_data["edge_count"].get<int64_t>();
+            if (value >= 0) {
+                mod.edge_count = static_cast<size_t>(value);
+            }
+        }
 
         schema.modules.push_back(std::move(mod));
     }
@@ -172,6 +179,9 @@ Schema parse_schema(const nlohmann::json &msg) {
             }
             if (wire_json.contains("offset") && wire_json["offset"].is_number()) {
                 wire.offset = wire_json["offset"].get<double>();
+            }
+            if (wire_json.contains("kind") && wire_json["kind"].is_string()) {
+                wire.kind = wire_json["kind"].get<std::string>();
             }
             schema.wiring.push_back(std::move(wire));
         }
@@ -248,6 +258,28 @@ IntrospectAck parse_introspect_ack(const nlohmann::json &msg) {
         }
     }
 
+    if (msg.contains("edges") && msg["edges"].is_array()) {
+        for (const auto &edge_json : msg["edges"]) {
+            if (!edge_json.is_object()) {
+                continue;
+            }
+            if (!edge_json.contains("source") || !edge_json["source"].is_string()) {
+                continue;
+            }
+            if (!edge_json.contains("target") || !edge_json["target"].is_string()) {
+                continue;
+            }
+
+            WireInfo edge;
+            edge.src = edge_json["source"].get<std::string>();
+            edge.dst = edge_json["target"].get<std::string>();
+            if (edge_json.contains("kind") && edge_json["kind"].is_string()) {
+                edge.kind = edge_json["kind"].get<std::string>();
+            }
+            ack.edges.push_back(std::move(edge));
+        }
+    }
+
     if (msg.contains("internal_wiring") && msg["internal_wiring"].is_array()) {
         for (const auto &wire_json : msg["internal_wiring"]) {
             if (!wire_json.is_object()) {
@@ -285,7 +317,8 @@ IntrospectAck parse_introspect_ack(const nlohmann::json &msg) {
 Schema make_schema_from_introspection(const IntrospectAck &ack) {
     Schema schema;
     schema.modules.reserve(ack.components.size());
-    schema.wiring.reserve(ack.internal_wiring.size());
+    const auto &edge_list = ack.edges.empty() ? ack.internal_wiring : ack.edges;
+    schema.wiring.reserve(edge_list.size());
 
     for (const auto &component : ack.components) {
         ModuleInfo module;
@@ -303,7 +336,7 @@ Schema make_schema_from_introspection(const IntrospectAck &ack) {
         schema.modules.push_back(std::move(module));
     }
 
-    for (const auto &wire : ack.internal_wiring) {
+    for (const auto &wire : edge_list) {
         if (wire.src.empty() || wire.dst.empty()) {
             continue;
         }

@@ -15,7 +15,7 @@ namespace {
 
 struct PathParts {
     std::string module;
-    std::string signal;
+    std::optional<std::string> signal;
 };
 
 bool starts_with(std::string_view value, std::string_view prefix) {
@@ -30,6 +30,12 @@ split_signal_path(const std::string &signal_path,
         std::string best_module;
         for (const auto &[module_name, index] : *module_to_index) {
             (void)index;
+            if (signal_path == module_name && module_name.size() > best_module_len) {
+                best_module_len = module_name.size();
+                best_module = module_name;
+                continue;
+            }
+
             const std::string prefix = module_name + ".";
             if (starts_with(signal_path, prefix) && module_name.size() > best_module_len) {
                 best_module_len = module_name.size();
@@ -37,11 +43,20 @@ split_signal_path(const std::string &signal_path,
             }
         }
 
-        if (!best_module.empty() && signal_path.size() > best_module_len + 1) {
-            return PathParts{
-                .module = best_module,
-                .signal = signal_path.substr(best_module_len + 1),
-            };
+        if (!best_module.empty()) {
+            if (signal_path.size() == best_module_len) {
+                return PathParts{
+                    .module = best_module,
+                    .signal = std::nullopt,
+                };
+            }
+
+            if (signal_path.size() > best_module_len + 1) {
+                return PathParts{
+                    .module = best_module,
+                    .signal = signal_path.substr(best_module_len + 1),
+                };
+            }
         }
     }
 
@@ -54,6 +69,25 @@ split_signal_path(const std::string &signal_path,
         .signal = signal_path.substr(dot + 1),
     };
 }
+
+std::string endpoint_pin_label(const PathParts &parts, std::string_view wire_kind) {
+    if (parts.signal.has_value()) {
+        return parts.signal.value();
+    }
+    if (wire_kind == "resolve") {
+        return "<resolve>";
+    }
+    return "<module>";
+}
+
+ImVec4 link_color_for_kind(std::string_view kind) {
+    if (kind == "resolve") {
+        return ImVec4(0.95f, 0.65f, 0.30f, 1.0f);
+    }
+    return ImVec4(0.5f, 0.8f, 0.5f, 1.0f);
+}
+
+bool edge_carries_telemetry(std::string_view kind) { return kind != "resolve"; }
 
 uint64_t edge_key(size_t src, size_t dst) {
     return (static_cast<uint64_t>(src) << 32U) | static_cast<uint64_t>(dst);
@@ -102,6 +136,7 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         node.module_type = schema.modules[i].module_type;
         node.supports_introspection = schema.modules[i].supports_introspection;
         node.component_count = schema.modules[i].component_count;
+        node.edge_count = schema.modules[i].edge_count;
         nodes_.push_back(std::move(node));
         module_to_index.emplace(schema.modules[i].name, i);
     }
@@ -154,8 +189,12 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         const size_t src_module_index = src_module_it->second;
         const size_t dst_module_index = dst_module_it->second;
 
-        wired_signals_by_module[src_module_index].insert(src->signal);
-        wired_signals_by_module[dst_module_index].insert(dst->signal);
+        if (src->signal.has_value()) {
+            wired_signals_by_module[src_module_index].insert(src->signal.value());
+        }
+        if (dst->signal.has_value()) {
+            wired_signals_by_module[dst_module_index].insert(dst->signal.value());
+        }
 
         TopologyLink link;
         link.id = kLinkIdBase + links_.size();
@@ -163,9 +202,12 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         link.dest_signal = wire.dst;
         link.gain = wire.gain;
         link.offset = wire.offset;
-        link.source_pin_id = get_or_create_pin_id(src_module_index, wire.src, src->signal,
+        link.kind = wire.kind;
+        link.source_pin_id = get_or_create_pin_id(src_module_index, wire.src,
+                                                  endpoint_pin_label(src.value(), wire.kind),
                                                   ax::NodeEditor::PinKind::Output);
-        link.dest_pin_id = get_or_create_pin_id(dst_module_index, wire.dst, dst->signal,
+        link.dest_pin_id = get_or_create_pin_id(dst_module_index, wire.dst,
+                                                endpoint_pin_label(dst.value(), wire.kind),
                                                 ax::NodeEditor::PinKind::Input);
         links_.push_back(std::move(link));
     }
@@ -503,12 +545,12 @@ void TopologyView::render_links(const TopologyGraph &graph,
     const bool telemetry_active = std::any_of(
         buffers.begin(), buffers.end(), [](const auto &entry) { return !entry.second.empty(); });
 
-    const ImVec4 link_color = ImVec4(0.5f, 0.8f, 0.5f, 1.0f);
     for (const auto &link : graph.links()) {
+        const ImVec4 link_color = link_color_for_kind(link.kind);
         ax::NodeEditor::Link(ax::NodeEditor::LinkId(link.id),
                              ax::NodeEditor::PinId(link.source_pin_id),
                              ax::NodeEditor::PinId(link.dest_pin_id), link_color, 2.0f);
-        if (telemetry_active) {
+        if (telemetry_active && edge_carries_telemetry(link.kind)) {
             ax::NodeEditor::Flow(ax::NodeEditor::LinkId(link.id));
         }
     }
@@ -603,6 +645,7 @@ void TopologyView::handle_hover_tooltips(const TopologyGraph &graph,
             ax::NodeEditor::Suspend();
             ImGui::BeginTooltip();
             ImGui::Text("%s -> %s", link.source_signal.c_str(), link.dest_signal.c_str());
+            ImGui::TextDisabled("Kind: %s", link.kind.c_str());
             if (source_pin != nullptr && source_pin->signal_index.has_value()) {
                 const auto it = buffers.find(source_pin->signal_index.value());
                 if (it != buffers.end() && !it->second.empty()) {
@@ -668,6 +711,9 @@ void TopologyView::handle_hover_tooltips(const TopologyGraph &graph,
                         ImGui::TextDisabled("Introspection: available");
                         if (node.component_count.has_value()) {
                             ImGui::TextDisabled("Components: %zu", node.component_count.value());
+                        }
+                        if (node.edge_count.has_value()) {
+                            ImGui::TextDisabled("Edges: %zu", node.edge_count.value());
                         }
                     } else {
                         ImGui::TextDisabled("Introspection: unavailable");

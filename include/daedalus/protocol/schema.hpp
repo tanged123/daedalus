@@ -20,6 +20,7 @@ struct ModuleInfo {
     std::optional<std::string> module_type;
     std::optional<bool> supports_introspection;
     std::optional<size_t> component_count;
+    std::optional<size_t> edge_count;
 };
 
 struct WireInfo {
@@ -27,6 +28,7 @@ struct WireInfo {
     std::string dst;
     double gain = 1.0;
     double offset = 0.0;
+    std::string kind = "route";
 };
 
 struct Schema {
@@ -57,6 +59,7 @@ struct IntrospectAck {
     std::string module;
     std::optional<std::string> module_type;
     std::vector<IntrospectionComponentInfo> components;
+    std::vector<WireInfo> edges;
     std::vector<WireInfo> internal_wiring;
     std::vector<std::string> execution_order;
     nlohmann::json summary;

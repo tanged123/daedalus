@@ -193,6 +193,7 @@ TEST(TopologyGraph, CarriesModuleIntrospectionMetadata) {
     schema.modules[0].module_type = "icarus";
     schema.modules[0].supports_introspection = true;
     schema.modules[0].component_count = 5;
+    schema.modules[0].edge_count = 12;
 
     TopologyGraph graph;
     graph.build_from_schema(schema);
@@ -201,9 +202,11 @@ TEST(TopologyGraph, CarriesModuleIntrospectionMetadata) {
     EXPECT_TRUE(graph.nodes()[0].module_type.has_value());
     EXPECT_TRUE(graph.nodes()[0].supports_introspection.has_value());
     EXPECT_TRUE(graph.nodes()[0].component_count.has_value());
+    EXPECT_TRUE(graph.nodes()[0].edge_count.has_value());
     EXPECT_EQ(graph.nodes()[0].module_type.value(), "icarus");
     EXPECT_TRUE(graph.nodes()[0].supports_introspection.value());
     EXPECT_EQ(graph.nodes()[0].component_count.value(), 5u);
+    EXPECT_EQ(graph.nodes()[0].edge_count.value(), 12u);
 }
 
 TEST(TopologyGraph, DuplicateSignalAcrossMultipleWiresCreatesSinglePin) {
@@ -221,6 +224,28 @@ TEST(TopologyGraph, DuplicateSignalAcrossMultipleWiresCreatesSinglePin) {
     EXPECT_EQ(inputs->output_pins.size(), 1u);
     ASSERT_EQ(graph.links().size(), 2u);
     EXPECT_EQ(graph.links()[0].source_pin_id, graph.links()[1].source_pin_id);
+}
+
+TEST(TopologyGraph, ResolveEdgeToModuleCreatesModuleLevelPin) {
+    Schema schema;
+    schema.modules.push_back(make_module("Rocket.Engine", {"force.x"}));
+    schema.modules.push_back(make_module("Rocket.Vehicle", {"total_force.x"}));
+    schema.wiring.push_back(
+        WireInfo{"Rocket.Engine.force.x", "Rocket.Vehicle", 1.0, 0.0, "resolve"});
+
+    TopologyGraph graph;
+    graph.build_from_schema(schema);
+
+    const TopologyNode *engine = find_node(graph, "Rocket.Engine");
+    const TopologyNode *vehicle = find_node(graph, "Rocket.Vehicle");
+    ASSERT_NE(engine, nullptr);
+    ASSERT_NE(vehicle, nullptr);
+    ASSERT_EQ(engine->output_pins.size(), 1u);
+    ASSERT_EQ(vehicle->input_pins.size(), 1u);
+    EXPECT_EQ(engine->output_pins[0].signal_name, "force.x");
+    EXPECT_EQ(vehicle->input_pins[0].signal_name, "<resolve>");
+    ASSERT_EQ(graph.links().size(), 1u);
+    EXPECT_EQ(graph.links()[0].kind, "resolve");
 }
 
 TEST(TopologyGraph, HasWiringReflectsLinkPresence) {

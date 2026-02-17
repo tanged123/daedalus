@@ -37,6 +37,7 @@ struct TopologyNode {
     std::optional<std::string> module_type;
     std::optional<bool> supports_introspection;
     std::optional<size_t> component_count;
+    std::optional<size_t> edge_count;
 };
 
 struct TopologyLink {
@@ -47,6 +48,7 @@ struct TopologyLink {
     std::string dest_signal;
     double gain = 1.0;
     double offset = 0.0;
+    std::string kind = "route";
 };
 
 class TopologyGraph {

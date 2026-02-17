@@ -600,7 +600,7 @@ void App::render_topology() {
             ImGui::SameLine();
             ImGui::TextDisabled("| Components: %zu", introspection_graph_.nodes().size());
             ImGui::SameLine();
-            ImGui::TextDisabled("| Wires: %zu", introspection_graph_.links().size());
+            ImGui::TextDisabled("| Edges: %zu", introspection_graph_.links().size());
 
             if (!introspection_execution_order_.empty()) {
                 std::string pipeline;

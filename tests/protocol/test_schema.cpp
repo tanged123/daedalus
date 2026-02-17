@@ -113,7 +113,8 @@ TEST(SchemaParser, ParsesWiringEntries) {
                 "src": "inputs.thrust_cmd",
                 "dst": "physics.input",
                 "gain": 2.0,
-                "offset": -1.25
+                "offset": -1.25,
+                "kind": "route"
             }
         ]
     })");
@@ -124,6 +125,7 @@ TEST(SchemaParser, ParsesWiringEntries) {
     EXPECT_EQ(schema.wiring[0].dst, "physics.input");
     EXPECT_DOUBLE_EQ(schema.wiring[0].gain, 2.0);
     EXPECT_DOUBLE_EQ(schema.wiring[0].offset, -1.25);
+    EXPECT_EQ(schema.wiring[0].kind, "route");
 }
 
 TEST(SchemaParser, MissingWiringDefaultsToEmpty) {
@@ -148,7 +150,8 @@ TEST(SchemaParser, ParsesModuleIntrospectionHints) {
                 "signals": [{"name": "state", "type": "f64"}],
                 "module_type": "icarus",
                 "supports_introspection": true,
-                "component_count": 5
+                "component_count": 5,
+                "edge_count": 12
             }
         }
     })");
@@ -158,9 +161,11 @@ TEST(SchemaParser, ParsesModuleIntrospectionHints) {
     ASSERT_TRUE(schema.modules[0].module_type.has_value());
     ASSERT_TRUE(schema.modules[0].supports_introspection.has_value());
     ASSERT_TRUE(schema.modules[0].component_count.has_value());
+    ASSERT_TRUE(schema.modules[0].edge_count.has_value());
     EXPECT_EQ(schema.modules[0].module_type.value(), "icarus");
     EXPECT_TRUE(schema.modules[0].supports_introspection.value());
     EXPECT_EQ(schema.modules[0].component_count.value(), 5u);
+    EXPECT_EQ(schema.modules[0].edge_count.value(), 12u);
 }
 
 TEST(SchemaParser, MissingIntrospectionHintsRemainUnset) {
@@ -178,6 +183,7 @@ TEST(SchemaParser, MissingIntrospectionHintsRemainUnset) {
     EXPECT_FALSE(schema.modules[0].module_type.has_value());
     EXPECT_FALSE(schema.modules[0].supports_introspection.has_value());
     EXPECT_FALSE(schema.modules[0].component_count.has_value());
+    EXPECT_FALSE(schema.modules[0].edge_count.has_value());
 }
 
 TEST(SchemaParser, EmptyWiringArray) {
@@ -211,6 +217,7 @@ TEST(SchemaParser, WiringGainAndOffsetDefaultValues) {
     ASSERT_EQ(schema.wiring.size(), 1u);
     EXPECT_DOUBLE_EQ(schema.wiring[0].gain, 1.0);
     EXPECT_DOUBLE_EQ(schema.wiring[0].offset, 0.0);
+    EXPECT_EQ(schema.wiring[0].kind, "route");
 }
 
 TEST(SchemaParser, MalformedWireMissingSourceIsSkipped) {
@@ -348,8 +355,12 @@ TEST(IntrospectAckParser, ParsesValidAck) {
         "internal_wiring": [
             {"src": "Rocket.Engine.thrust", "dst": "Rocket.Body.force.x"}
         ],
+        "edges": [
+            {"source": "Rocket.Engine.thrust", "target": "Rocket.Body.force.x", "kind": "route"},
+            {"source": "Rocket.Engine.force.x", "target": "Rocket.Vehicle", "kind": "resolve"}
+        ],
         "execution_order": ["Rocket.Engine", "Rocket.Body"],
-        "summary": {"total_components": 2}
+        "summary": {"total_components": 2, "total_edges": 2}
     })");
 
     const auto ack = parse_introspect_ack(msg);
@@ -366,6 +377,13 @@ TEST(IntrospectAckParser, ParsesValidAck) {
     ASSERT_EQ(ack.internal_wiring.size(), 1u);
     EXPECT_EQ(ack.internal_wiring[0].src, "Rocket.Engine.thrust");
     EXPECT_EQ(ack.internal_wiring[0].dst, "Rocket.Body.force.x");
+    ASSERT_EQ(ack.edges.size(), 2u);
+    EXPECT_EQ(ack.edges[0].src, "Rocket.Engine.thrust");
+    EXPECT_EQ(ack.edges[0].dst, "Rocket.Body.force.x");
+    EXPECT_EQ(ack.edges[0].kind, "route");
+    EXPECT_EQ(ack.edges[1].src, "Rocket.Engine.force.x");
+    EXPECT_EQ(ack.edges[1].dst, "Rocket.Vehicle");
+    EXPECT_EQ(ack.edges[1].kind, "resolve");
     ASSERT_EQ(ack.execution_order.size(), 2u);
     EXPECT_EQ(ack.execution_order[0], "Rocket.Engine");
     EXPECT_EQ(ack.execution_order[1], "Rocket.Body");
@@ -452,4 +470,31 @@ TEST(IntrospectionSchemaBuilder, AddsSignalsReferencedOnlyByWiring) {
     ASSERT_EQ(body->signals.size(), 1u);
     EXPECT_EQ(engine->signals[0].name, "thrust");
     EXPECT_EQ(body->signals[0].name, "force.x");
+}
+
+TEST(IntrospectionSchemaBuilder, PrefersTypedEdgesWhenPresent) {
+    IntrospectAck ack;
+    ack.module = "rocket";
+    ack.components = {
+        IntrospectionComponentInfo{
+            .name = "Rocket.Engine",
+            .type = "SolidRocketEngine",
+        },
+        IntrospectionComponentInfo{
+            .name = "Rocket.Vehicle",
+            .type = "Vehicle6DOF",
+        },
+    };
+    ack.internal_wiring = {
+        WireInfo{"Rocket.Engine.legacy", "Rocket.Vehicle.legacy_input", 1.0, 0.0},
+    };
+    ack.edges = {
+        WireInfo{"Rocket.Engine.force.x", "Rocket.Vehicle", 1.0, 0.0, "resolve"},
+    };
+
+    const auto schema = make_schema_from_introspection(ack);
+    ASSERT_EQ(schema.wiring.size(), 1u);
+    EXPECT_EQ(schema.wiring[0].src, "Rocket.Engine.force.x");
+    EXPECT_EQ(schema.wiring[0].dst, "Rocket.Vehicle");
+    EXPECT_EQ(schema.wiring[0].kind, "resolve");
 }
