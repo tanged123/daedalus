@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <map>
 #include <queue>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -150,6 +151,14 @@ void TopologyGraph::build_from_schema(const protocol::Schema &schema) {
         const auto existing = signal_map.find(signal_path);
         if (existing != signal_map.end()) {
             return existing->second;
+        }
+
+        if (state.next_pin_index >= kMaxPinsPerModule) {
+            throw std::overflow_error(
+                "TopologyGraph::build_from_schema pin id overflow for module '" +
+                nodes_[module_index].module_name + "' while creating pin for '" + signal_path +
+                "' (kMaxPinsPerModule=" + std::to_string(kMaxPinsPerModule) +
+                ", kPinIdBase=" + std::to_string(kPinIdBase) + ")");
         }
 
         const uintptr_t pin_index = state.next_pin_index++;
@@ -734,13 +743,13 @@ void TopologyView::handle_node_context_menu(const TopologyGraph &graph) {
         return;
     }
 
-    ax::NodeEditor::Suspend();
     ax::NodeEditor::NodeId context_node_id;
     if (ax::NodeEditor::ShowNodeContextMenu(&context_node_id)) {
         context_node_id_ = context_node_id;
         ImGui::OpenPopup("TopologyNodeContextMenu");
     }
 
+    ax::NodeEditor::Suspend();
     if (ImGui::BeginPopup("TopologyNodeContextMenu")) {
         const TopologyNode *selected_node = nullptr;
         for (const auto &node : graph.nodes()) {
@@ -772,6 +781,7 @@ void TopologyView::handle_node_context_menu(const TopologyGraph &graph) {
         }
         ImGui::EndPopup();
     }
+    ax::NodeEditor::Resume();
 
     const auto hovered_node = ax::NodeEditor::GetHoveredNode();
     if (hovered_node && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && inspect_callback_) {
@@ -786,7 +796,6 @@ void TopologyView::handle_node_context_menu(const TopologyGraph &graph) {
             break;
         }
     }
-    ax::NodeEditor::Resume();
 }
 
 } // namespace daedalus::views

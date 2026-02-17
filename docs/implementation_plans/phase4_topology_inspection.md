@@ -2,7 +2,7 @@
 
 > **Created**: 2026-02-15
 > **Branch**: `phase4`
-> **Status**: Planning
+> **Status**: Complete
 > **Depends on**: Phase 3 (complete)
 
 ---
@@ -1374,8 +1374,8 @@ Full interactive testing against live Hermes data:
 - [x] All Phase 1-3 tests still pass (no regressions)
 - [x] ~25 new unit tests for Phase 4
 - [x] `./scripts/ci.sh` passes (clean build + all tests)
-- [ ] End-to-end verification against `multi_module.yaml` (wiring)
-- [ ] End-to-end verification against `websocket_telemetry.yaml` (no wiring)
+- [x] End-to-end verification against `multi_module.yaml` (wiring)
+- [x] End-to-end verification against `websocket_telemetry.yaml` (no wiring)
 
 ---
 
