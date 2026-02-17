@@ -122,7 +122,7 @@
         # Daedalus package
         daedalusPackage = stdenv.mkDerivation {
           pname = "daedalus";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
 
           nativeBuildInputs = [
