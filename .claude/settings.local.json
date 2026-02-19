@@ -35,7 +35,17 @@
       "WebFetch(domain:uxplanet.org)",
       "WebFetch(domain:nasa.github.io)",
       "WebFetch(domain:deepwiki.com)",
-      "WebFetch(domain:grafana.com)"
+      "WebFetch(domain:grafana.com)",
+      "Bash(grep:*)",
+      "WebFetch(domain:cesium.com)",
+      "WebFetch(domain:danceswithcode.net)",
+      "WebFetch(domain:www.codingwiththomas.com)",
+      "WebFetch(domain:www.songho.ca)",
+      "WebFetch(domain:jadkhoury.github.io)",
+      "WebFetch(domain:community.cesium.com)",
+      "WebFetch(domain:gssc.esa.int)",
+      "WebFetch(domain:fastgltf.readthedocs.io)",
+      "WebFetch(domain:www.aircraftflightmechanics.com)"
     ]
   }
 }

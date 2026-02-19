@@ -819,23 +819,55 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 
 ### Phase 4: Topology + Inspection
 
-- [ ] imgui-node-editor integration (provided by ImGui Bundle)
-- [ ] Auto-layout from schema wiring information
-- [ ] Signal values displayed on hover over connections
-- [ ] Inspect command → shadow execution pipeline
-- [ ] Subgraph rendering with intermediate values
+- [x] imgui-node-editor integration (provided by IsmGui Bundle)
+- [x] Auto-layout from schema wiring information
+- [x] Signal values displayed on hover over connections
+- [x] Inspect command → shadow execution pipeline
+- [x] Subgraph rendering with intermediate values
 
 ### Phase 5: 3D World View
 
-> **Note**: This is the most complex single feature. The technology choice is deliberately deferred.
+> **Detailed plan**: See [`docs/implementation_plans/phase5_3d_world_view.md`](implementation_plans/phase5_3d_world_view.md)
+>
+> **Technology**: Google Filament (PBR renderer) + custom quadtree tile streaming + glm math. Filament as custom Nix derivation.
 
-- [ ] Evaluate options: raw OpenGL globe, lightweight rendering library, or osgEarth
-- [ ] Vehicle position rendering (lat/lon/alt from telemetry)
-- [ ] Attitude visualization (body axes, velocity vector)
-- [ ] Trajectory trail with time-based coloring
-- [ ] Camera modes: Earth-fixed, vehicle-fixed, free-fly
+**Phase 5a — Filament Foundation + Basic Globe:**
+- [ ] Filament custom Nix derivation
+- [ ] Blue Marble texture Nix fetchurl derivation
+- [ ] Shared GL context (Filament + Hello ImGui) + FBO → ImGui::Image()
+- [ ] Cube-sphere globe mesh with Blue Marble texture
+- [ ] Arcball camera (orbit, zoom)
+- [ ] Coordinate math: LLA↔ECEF, ENU/NED frames, RTE transforms
 
-**Why defer the 3D tech choice?** osgEarth is extremely heavy (OpenSceneGraph + GDAL + PROJ + terrain tiles). A simpler approach (colored dot on a Mercator projection rendered in ImGui, or a basic OpenGL sphere) may provide 80% of the value at 5% of the complexity. By Phase 5, we'll have enough experience with the codebase to make a better decision. The WASM story for osgEarth is also unclear — maintaining two separate 3D stacks (osgEarth for desktop, CesiumJS for web) would be a maintenance burden.
+**Phase 5b — Vehicle Visualization:**
+- [ ] Vehicle position from telemetry (position_lla signals → ECEF → model matrix)
+- [ ] Procedural vehicle geometry (cone/arrow) with attitude
+- [ ] Velocity vector display
+- [ ] Dynamic scale based on camera distance
+
+**Phase 5c — Trails and Effects:**
+- [ ] Trajectory trail (ring-buffer VBO, color-coded by time/altitude/velocity)
+- [ ] FOV cones (semi-transparent, configurable)
+- [ ] LOS vectors
+- [ ] Ground track projection on globe surface
+
+**Phase 5d — Tile Streaming:**
+- [ ] Quadtree-per-cube-face LOD system (6 quadtrees)
+- [ ] Async HTTP tile downloader (background thread + SPSC queue)
+- [ ] Natural Earth raster tiles (public domain, up to zoom ~6)
+- [ ] LRU tile texture cache (~200 tiles)
+
+**Phase 5e — Camera Modes:**
+- [ ] Earth-fixed (orbiting globe center)
+- [ ] Vehicle-fixed (orbiting vehicle position)
+- [ ] Free-fly (WASD + mouse-look)
+- [ ] Smooth animated transitions between modes
+
+**Phase 5f — glTF Vehicle Models (future):**
+- [ ] fastgltf FetchContent integration
+- [ ] glTF model loading into Filament scene
+- [ ] Named node hierarchy for articulating parts (engine gimbal, control surfaces)
+- [ ] Config-driven signal-to-articulation binding
 
 ### Phase 6: Polish + WASM
 
