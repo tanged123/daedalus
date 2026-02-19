@@ -1303,5 +1303,5 @@ Full interactive testing against live Hermes data:
 - [x] All Phase 1+2 tests still pass (no regressions)
 - [x] ~28 new unit tests for Phase 3 data models
 - [x] `./scripts/ci.sh` passes (clean build + all tests)
-- [ ] End-to-end verification against live Hermes data
-- [ ] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)
+- [x] End-to-end verification against live Hermes data
+- [x] Works with both `websocket_telemetry.yaml` (4 signals) and `icarus_rocket.yaml` (~90 signals)

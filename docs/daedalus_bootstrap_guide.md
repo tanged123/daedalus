@@ -812,10 +812,10 @@ git submodule add https://github.com/tanged123/hermes.git references/hermes
 
 ### Phase 3: Playback Controls + Console
 
-- [ ] Pause / resume / reset / single-step buttons (send commands to Hermes)
-- [ ] Event stream display (acks, state changes, errors)
-- [ ] Command history with replay
-- [ ] Signal value inspector (current values table, searchable)
+- [x] Pause / resume / reset / single-step buttons (send commands to Hermes)
+- [x] Event stream display (acks, state changes, errors)
+- [x] Command history with replay
+- [x] Signal value inspector (current values table, searchable) merged with signal tree
 
 ### Phase 4: Topology + Inspection
 

@@ -57,6 +57,14 @@ TEST(HermesClient, FormatSet) {
     EXPECT_DOUBLE_EQ(cmd["params"]["value"].get<double>(), 0.75);
 }
 
+TEST(HermesClient, FormatIntrospect) {
+    auto cmd = HermesClient::format_command("introspect", {{"module", "rocket"}});
+
+    EXPECT_EQ(cmd["action"], "introspect");
+    ASSERT_TRUE(cmd.contains("params"));
+    EXPECT_EQ(cmd["params"]["module"], "rocket");
+}
+
 TEST(HermesClient, NoTypeWrapper) {
     // Hermes protocol uses {"action": "..."} — NO {"type": "cmd"} wrapper
     auto cmd = HermesClient::format_command("pause");

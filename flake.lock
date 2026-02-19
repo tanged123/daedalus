@@ -120,11 +120,11 @@
         "treefmt-nix": "treefmt-nix_5"
       },
       "locked": {
-        "lastModified": 1771196978,
-        "narHash": "sha256-RCN9H88JEyNU9v7dMNz06dq5QyTRoqoZATLeWMBtj+A=",
+        "lastModified": 1771312793,
+        "narHash": "sha256-XFGaCLU3qkEZWRVEUBB97eaFmCtqcOeSxhAqye6+gj0=",
         "owner": "tanged123",
         "repo": "hermes",
-        "rev": "10f4af1be9fff5abd623de54e3026942be3ea197",
+        "rev": "031973e53c8ef994a4b1a66e228b6ea31c3091d1",
         "type": "github"
       },
       "original": {
@@ -142,11 +142,11 @@
         "vulcan": "vulcan"
       },
       "locked": {
-        "lastModified": 1770182204,
-        "narHash": "sha256-qewV1d0kzF2FHMfV3ca3pjOoTR0I553RwX2CkYNHLt0=",
+        "lastModified": 1771312727,
+        "narHash": "sha256-5hL06lDQlp4zKdVHAut0vdflrwPLWz/1CKYiRklAvpE=",
         "owner": "tanged123",
         "repo": "icarus",
-        "rev": "77de27c0c1d6a48689fea7516d60d34d216e4e84",
+        "rev": "019c583f00573bd2088943e97772f057c2488e18",
         "type": "github"
       },
       "original": {

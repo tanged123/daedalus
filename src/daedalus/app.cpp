@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -72,14 +73,6 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
         std::fprintf(stderr, "[GLFW Error %d] %s\n", error, description);
     });
 
-    // Force X11 on WSL2/WSLg — GLFW 3.4 prefers Wayland when
-    // WAYLAND_DISPLAY is set, but WSLg's Wayland EGL is unreliable.
-    // Unsetting WAYLAND_DISPLAY is the most reliable approach since
-    // Hello ImGui may override glfwInitHint during its own setup.
-    if (std::getenv("WSL_DISTRO_NAME") != nullptr && std::getenv("GLFW_PLATFORM") == nullptr) {
-        unsetenv("WAYLAND_DISPLAY");
-    }
-
     // Create Hermes client
     client_ = std::make_unique<protocol::HermesClient>(server_url_);
     plot_manager_.set_signal_unit_lookup(
@@ -108,6 +101,30 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
             client_->send_command(action, params);
             console_log_.add_command(action, params);
         });
+    topology_view_.set_inspect_callback([this](const std::string &module_name) {
+        const auto module_it = std::find_if(
+            current_schema_.modules.begin(), current_schema_.modules.end(),
+            [&](const protocol::ModuleInfo &module) { return module.name == module_name; });
+        if (module_it != current_schema_.modules.end() &&
+            module_it->supports_introspection.has_value() &&
+            !module_it->supports_introspection.value()) {
+            const std::string module_type = module_it->module_type.value_or("unknown");
+            console_log_.add(
+                views::ConsoleEntryType::System, "Introspection unavailable for module",
+                module_name + " (type: " + module_type + ")", playback_state_.last_sim_time);
+            return;
+        }
+
+        if (client_ != nullptr && playback_state_.connected &&
+            client_->state() == protocol::ConnectionState::Connected) {
+            client_->send_command("introspect", {{"module", module_name}});
+            console_log_.add_command("introspect", {{"module", module_name}});
+            return;
+        }
+
+        console_log_.add(views::ConsoleEntryType::System, "Introspection skipped: not connected",
+                         "", playback_state_.last_sim_time);
+    });
 
     // Set up Hello ImGui runner params
     HelloImGui::RunnerParams runner_params;
@@ -164,12 +181,22 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     plots_window.dockSpaceName = "MainDockSpace";
     plots_window.GuiFunction = [this] { render_plot_workspace(); };
 
+    HelloImGui::DockableWindow topology_window;
+    topology_window.label = "Topology";
+    topology_window.dockSpaceName = "MainDockSpace";
+    topology_window.GuiFunction = [this] { render_topology(); };
+
     HelloImGui::DockableWindow console_window;
     console_window.label = "Console";
     console_window.dockSpaceName = "ConsoleSpace";
     console_window.GuiFunction = [this] { render_console(); };
 
-    runner_params.dockingParams.dockableWindows = {signals_window, plots_window, console_window};
+    runner_params.dockingParams.dockableWindows = {
+        signals_window,
+        plots_window,
+        topology_window,
+        console_window,
+    };
 
     // Status bar: connection status
     runner_params.callbacks.ShowStatus = [this] { render_connection_status(); };
@@ -237,6 +264,10 @@ void App::handle_event(const std::string &json_str) {
                     signal_units_.emplace(module.name + "." + signal.name, signal.unit.value());
                 }
             }
+            topology_graph_.build_from_schema(current_schema_);
+            topology_graph_.update_units(signal_units_);
+            topology_view_.reset();
+            clear_introspection_state();
             schema_received_ = true;
 
             // Auto-subscribe to all signals
@@ -248,6 +279,11 @@ void App::handle_event(const std::string &json_str) {
             if (action == "subscribe") {
                 auto ack = protocol::parse_subscribe_ack(msg);
                 signal_tree_.update_subscription(ack);
+                topology_graph_.update_subscription(ack);
+                if (introspection_available_) {
+                    introspection_graph_.update_subscription_with_prefix(
+                        ack, introspection_module_ + ".");
+                }
 
                 // Create signal buffers for each subscribed signal
                 subscribed_signals_ = ack.signals;
@@ -260,6 +296,42 @@ void App::handle_event(const std::string &json_str) {
                 // Start telemetry flow
                 client_->resume();
                 console_log_.add_command("resume");
+            } else if (action == "introspect") {
+                const auto introspection = protocol::parse_introspect_ack(msg);
+                introspection_module_ = introspection.module;
+                introspection_module_type_ = introspection.module_type;
+                introspection_execution_order_ = introspection.execution_order;
+                introspection_summary_ = introspection.summary;
+
+                const auto introspection_schema =
+                    protocol::make_schema_from_introspection(introspection);
+                introspection_graph_.build_from_schema(introspection_schema);
+                introspection_view_.reset();
+
+                protocol::SubscribeAck subscribe_view;
+                subscribe_view.count = static_cast<uint32_t>(subscribed_signals_.size());
+                subscribe_view.signals = subscribed_signals_;
+                introspection_graph_.update_subscription_with_prefix(subscribe_view,
+                                                                     introspection.module + ".");
+
+                std::unordered_map<std::string, std::string> introspection_units;
+                introspection_units.reserve(signal_units_.size());
+                const std::string introspection_prefix = introspection.module + ".";
+                for (const auto &[signal, unit] : signal_units_) {
+                    if (signal.size() > introspection_prefix.size() &&
+                        signal.compare(0, introspection_prefix.size(), introspection_prefix) == 0) {
+                        introspection_units.emplace(signal.substr(introspection_prefix.size()),
+                                                    unit);
+                    }
+                }
+                introspection_graph_.update_units(introspection_units);
+                introspection_available_ = !introspection_graph_.empty();
+
+                if (!introspection_available_) {
+                    console_log_.add(views::ConsoleEntryType::System,
+                                     "Introspection returned no components", introspection.module,
+                                     playback_state_.last_sim_time);
+                }
             }
         } else if (type == "connection") {
             const std::string event = msg.value("event", "");
@@ -275,11 +347,15 @@ void App::handle_event(const std::string &json_str) {
                 signal_buffers_.clear();
                 signal_units_.clear();
                 signal_tree_.clear();
+                topology_graph_.clear();
                 plot_manager_.clear_panel_signals();
                 signal_inspector_.reset();
+                topology_view_.reset();
+                clear_introspection_state();
             } else if (event == "error") {
                 playback_state_.connected = false;
                 playback_state_.reset();
+                clear_introspection_state();
             }
         }
     } catch (const std::exception &e) {
@@ -497,6 +573,77 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
 void App::render_plot_workspace() {
     plot_manager_.render_toolbar();
     plot_manager_.render(signal_buffers_);
+}
+
+void App::render_topology() {
+    if (!introspection_available_) {
+        topology_view_.render(topology_graph_, signal_buffers_);
+        return;
+    }
+
+    if (ImGui::BeginTabBar("TopologyTabs")) {
+        if (ImGui::BeginTabItem("System")) {
+            topology_view_.render(topology_graph_, signal_buffers_);
+            ImGui::EndTabItem();
+        }
+
+        std::string introspection_label = "Introspection";
+        if (!introspection_module_.empty()) {
+            introspection_label += ": " + introspection_module_;
+        }
+        if (ImGui::BeginTabItem(introspection_label.c_str())) {
+            ImGui::TextDisabled("Module: %s", introspection_module_.c_str());
+            if (introspection_module_type_.has_value()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("| Type: %s", introspection_module_type_->c_str());
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("| Components: %zu", introspection_graph_.nodes().size());
+            ImGui::SameLine();
+            ImGui::TextDisabled("| Edges: %zu", introspection_graph_.links().size());
+
+            if (!introspection_execution_order_.empty()) {
+                std::string pipeline;
+                for (size_t i = 0; i < introspection_execution_order_.size(); ++i) {
+                    if (i > 0) {
+                        pipeline += " -> ";
+                    }
+                    pipeline += introspection_execution_order_[i];
+                }
+                ImGui::TextWrapped("Execution order: %s", pipeline.c_str());
+            }
+
+            if (introspection_summary_.contains("integrable_states") &&
+                (introspection_summary_["integrable_states"].is_number_unsigned() ||
+                 introspection_summary_["integrable_states"].is_number_integer())) {
+                const auto states = introspection_summary_["integrable_states"].get<int64_t>();
+                if (states >= 0) {
+                    ImGui::TextDisabled("Integrable states: %lld", static_cast<long long>(states));
+                }
+            }
+
+            if (ImGui::SmallButton("Close Introspection")) {
+                clear_introspection_state();
+                ImGui::EndTabItem();
+                ImGui::EndTabBar();
+                return;
+            }
+            ImGui::Separator();
+            introspection_view_.render(introspection_graph_, signal_buffers_);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+}
+
+void App::clear_introspection_state() {
+    introspection_graph_.clear();
+    introspection_view_.reset();
+    introspection_module_.clear();
+    introspection_module_type_.reset();
+    introspection_execution_order_.clear();
+    introspection_summary_ = nlohmann::json::object();
+    introspection_available_ = false;
 }
 
 void App::render_console() { console_view_.render(console_log_); }

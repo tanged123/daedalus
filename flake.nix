@@ -57,6 +57,9 @@
             xorg.libXcursor
             xorg.libXi
             xorg.libXext
+            wayland
+            libxkbcommon
+            libdecor
           ];
           cmakeFlags = [
             "-DHELLOIMGUI_USE_GLFW3=ON"
@@ -119,7 +122,7 @@
         # Daedalus package
         daedalusPackage = stdenv.mkDerivation {
           pname = "daedalus";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
 
           nativeBuildInputs = [
@@ -140,6 +143,9 @@
             pkgs.xorg.libXcursor
             pkgs.xorg.libXi
             pkgs.xorg.libXext
+            pkgs.wayland
+            pkgs.libxkbcommon
+            pkgs.libdecor
             # Networking (IXWebSocket FetchContent deps)
             pkgs.openssl
             pkgs.zlib
@@ -181,6 +187,9 @@
             xorg.libXcursor
             xorg.libXi
             xorg.libXext
+            wayland
+            libxkbcommon
+            libdecor
             # Networking (IXWebSocket FetchContent deps)
             openssl
             zlib
@@ -191,6 +200,7 @@
             # Dev tools
             clang-tools
             llvmPackages_latest.llvm # llvm-cov for coverage
+            gdb
             doxygen
             graphviz
             lcov
@@ -200,6 +210,14 @@
           shellHook = ''
             # Propagate Nix cmake paths so find_package() works in manual builds
             export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            # GLFW's Wayland backend dlopens these at runtime, so expose them explicitly.
+            export LD_LIBRARY_PATH="${
+              pkgs.lib.makeLibraryPath [
+                pkgs.wayland
+                pkgs.libxkbcommon
+                pkgs.libdecor
+              ]
+            }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             echo "Daedalus dev environment loaded"
             echo "  - C++ compiler: $(c++ --version | head -1)"
             echo "  - Hermes CLI:   $(hermes --version)"

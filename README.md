@@ -5,9 +5,25 @@
 [![codecov](https://codecov.io/github/tanged123/daedalus/graph/badge.svg)](https://codecov.io/github/tanged123/daedalus)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://tanged123.github.io/daedalus/)
 
-**Mission Control Visualization Suite for Project Icarus**
+**Mission Control Visualization Suite for Hermes Simulations**
 
-Daedalus is a high-density mission control interface for real-time monitoring and analysis of simulations orchestrated by [Hermes](https://github.com/tanged123/hermes). It speaks the Hermes protocol and visualizes generic signals — it knows nothing about physics or simulation internals.
+Daedalus is a high-density desktop UI for real-time monitoring and control of simulations orchestrated by [Hermes](https://github.com/tanged123/hermes). It speaks the Hermes protocol and visualizes generic signals without hard-coding any specific physics model.
+
+## Screenshot
+
+![Daedalus UI](docs/images/gui.png)
+
+## What It Provides
+
+- Live signal exploration (tree + sortable table)
+- Multi-panel plotting with drag-and-drop signal assignment
+- Playback controls (pause, resume, reset, step)
+- Topology graph from Hermes `schema.wiring` with auto-layout and live values
+- Module introspection subgraphs via Hermes `introspect`:
+  - Component-level graph rendering
+  - Typed internal edges (`route` and `resolve`)
+  - Execution-order pipeline display
+- Console with event stream, command history, and command replay
 
 ## Architecture
 
@@ -17,8 +33,8 @@ Daedalus is the visualization layer in the Icarus ecosystem:
 ┌─────────────────────────────────────────────────────────────┐
 │                    DAEDALUS (Visualizer)                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │ 3D World │  │ Plotting │  │ Topology │  │ Console  │    │
-│  │(osgEarth)│  │ (ImPlot) │  │ (NodeEd) │  │  (Log)   │    │
+│  │ Signals  │  │ Plotting │  │ Topology │  │ Console  │    │
+│  │Tree/Table│  │ (ImPlot) │  │ (NodeEd) │  │  (Log)   │    │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │
 └────────────────────────┬────────────────────────────────────┘
                          │ WebSocket (Hermes Protocol)
@@ -27,14 +43,6 @@ Daedalus is the visualization layer in the Icarus ecosystem:
                     └─────────┘
 ```
 
-## Key Features
-
-- **Signal Plotter**: Drag-and-drop signal visualization with ImPlot
-- **3D World View**: Vehicle position/attitude on Earth (osgEarth)
-- **Topology View**: Module wiring diagram (imgui-node-editor)
-- **Console**: Event stream, phase transitions, command history
-- **Inspect Mode**: Shadow execution for debugging without instrumentation
-
 ## Tech Stack
 
 | Layer | Library | Purpose |
@@ -42,7 +50,6 @@ Daedalus is the visualization layer in the Icarus ecosystem:
 | UI Framework | ImGui Bundle | Dear ImGui + Hello ImGui + ImPlot + imgui-node-editor |
 | Plotting | ImPlot | High-frequency signal visualization |
 | Topology | imgui-node-editor | Block diagram visualization |
-| 3D World | TBD (Phase 5) | Geospatial rendering |
 | Networking | IXWebSocket | Hermes protocol client with auto-reconnect |
 | Data | nlohmann_json | JSON parsing for control channel |
 
@@ -55,8 +62,14 @@ Daedalus is the visualization layer in the Icarus ecosystem:
 # Build
 ./scripts/build.sh
 
-# Run (connect to a running Hermes instance)
-./build/daedalus --host localhost --port 8765
+# Run Daedalus + Hermes together (default demo config)
+./scripts/run.sh
+
+# Run with a specific Hermes config
+./scripts/run.sh references/hermes/examples/icarus_rocket.yaml
+
+# Or run Daedalus alone (expects Hermes on ws://127.0.0.1:8765)
+./build/daedalus
 
 # Run tests
 ./scripts/test.sh
@@ -69,6 +82,7 @@ All scripts auto-enter the Nix environment if needed:
 ```bash
 ./scripts/dev.sh          # Enter Nix development environment
 ./scripts/build.sh        # Build the project
+./scripts/run.sh          # Run Hermes + Daedalus together
 ./scripts/test.sh         # Run all tests
 ./scripts/ci.sh           # Full CI (build + test)
 ./scripts/coverage.sh     # Generate coverage report
@@ -76,6 +90,16 @@ All scripts auto-enter the Nix environment if needed:
 ./scripts/generate_docs.sh # Generate Doxygen docs
 ./scripts/install-hooks.sh # Install pre-commit hooks
 ```
+
+## Hermes Protocol Notes
+
+Daedalus currently consumes:
+- `schema` messages including optional module metadata (`module_type`, `supports_introspection`, `component_count`, `edge_count`)
+- `ack/subscribe`
+- `ack/introspect` including typed `edges` (`source`, `target`, `kind`)
+- Binary telemetry frames for signal values
+
+For backward compatibility, introspection still accepts legacy `internal_wiring` payloads when `edges` is not present.
 
 ## License
 
