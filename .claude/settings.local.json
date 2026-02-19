@@ -45,7 +45,11 @@
       "WebFetch(domain:community.cesium.com)",
       "WebFetch(domain:gssc.esa.int)",
       "WebFetch(domain:fastgltf.readthedocs.io)",
-      "WebFetch(domain:www.aircraftflightmechanics.com)"
+      "WebFetch(domain:www.aircraftflightmechanics.com)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:docs.osgearth.org)",
+      "WebFetch(domain:mynixos.com)"
     ]
   }
 }
