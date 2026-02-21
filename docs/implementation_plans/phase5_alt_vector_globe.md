@@ -17,12 +17,14 @@
 6. [Phase 5a — FBO Foundation + Graticule Globe](#6-phase-5a--fbo-foundation--graticule-globe)
 7. [Phase 5b — Coastlines + Vehicle](#7-phase-5b--coastlines--vehicle)
 8. [Phase 5c — Trail + Effects](#8-phase-5c--trail--effects)
-9. [Phase 5d — Bloom Glow Pass](#9-phase-5d--bloom-glow-pass)
-10. [Phase 5e — Camera Modes + HUD Overlay](#10-phase-5e--camera-modes--hud-overlay)
-11. [Coordinate Math Reference](#11-coordinate-math-reference)
-12. [Risk Register](#12-risk-register)
-13. [Comparison Matrix](#13-comparison-matrix)
-14. [Dependencies Summary](#14-dependencies-summary)
+9. [Phase 5d — Terrain Elevation + Ground Interaction](#9-phase-5d--terrain-elevation--ground-interaction)
+10. [Phase 5e — Bloom Glow Pass](#10-phase-5e--bloom-glow-pass)
+11. [Phase 5f — Camera Modes + HUD Overlay](#11-phase-5f--camera-modes--hud-overlay)
+12. [Coordinate Math Reference](#12-coordinate-math-reference)
+13. [Terrain + 6DoF Contract](#13-terrain--6dof-contract)
+14. [Risk Register](#14-risk-register)
+15. [Comparison Matrix](#15-comparison-matrix)
+16. [Dependencies Summary](#16-dependencies-summary)
 
 ---
 
@@ -37,9 +39,10 @@ The existing three plans each add a major rendering engine to get a photorealist
 | Visual coherence with ImGui UI | Low (PBR≠terminal) | Low (photorealistic) | None (separate window) | **High (same language)** |
 | WASM (Phase 6) | Yes (WebGL2) | No (dead end) | No (external process) | **Yes (WebGL2, vertex-only shader path)** |
 | Lines, trails, cones | Custom | Custom | Limited | **Native (GL_TRIANGLES)** |
+| Terrain elevation | Deferred | Yes | Yes | **Yes (Terrarium DEM + wireframe terrain patch)** |
 | LOC for globe | ~2,000–3,500 | ~500 (port cost) | ~150 | **~1,200–1,800** |
 
-**Key insight**: OpenGL is already linked via `OpenGL::GL` in CMakeLists.txt and GLFW is already present via imgui_bundle. We can open an FBO, draw into it, and display it as `ImGui::Image()` — *without adding a single new library dependency for the rendering.*
+**Key insight**: OpenGL is already linked via `OpenGL::GL` in CMakeLists.txt and GLFW is already present via imgui_bundle. We can open an FBO, draw into it, and display it as `ImGui::Image()` — *without adding a new rendering engine dependency.*
 
 The vector aesthetic is not a compromise — it is the right choice for a mission control visualization tool:
 
@@ -168,6 +171,7 @@ Hello ImGui frame (render thread)
   │     │     ├─ draw_background()         (clear to bg color)
   │     │     ├─ globe_.draw_graticule()   (lat/lon grid)
   │     │     ├─ globe_.draw_coastlines()  (vector coast lines)
+  │     │     ├─ terrain_.draw_wireframe() (DEM mesh, RTE space)
   │     │     ├─ trail_.draw()             (vehicle trajectory)
   │     │     ├─ vehicle_.draw()           (cone marker)
   │     │     ├─ effects_.draw()           (FOV cones, LOS vectors)
@@ -186,6 +190,7 @@ Hello ImGui frame (render thread)
   │
   └─ HUD overlay (ImGui::GetWindowDrawList())
         ├─ lat/lon/alt readout
+        ├─ terrain altitude + AGL readout
         ├─ speed + heading
         └─ camera mode indicator
 ```
@@ -227,8 +232,30 @@ This is vastly simpler than the Filament shared context initialization sequence.
 
 | Library | Purpose | Source | Notes |
 |:--------|:--------|:-------|:------|
+| **vulcan** | Vetted geodetic + frame transforms (LLA/ECEF/NED/Body) | nix (Pantheon stack) | Avoid owning coordinate transform code |
 | **glm** | Math (vec3, mat4, quat) | nixpkgs | Already decided in Phase 5 plan |
-| **None else** | — | — | OpenGL + GLFW already present |
+| **stb_image** (header-only) | Decode Terrarium PNG elevation tiles | bundled header | No new compiled dependency |
+
+### Coordinate Transform Backend (Vulcan)
+
+Use Vulcan as the coordinate source of truth. Daedalus should not implement geodetic or frame transform formulas directly.
+
+- Use `vulcan::lla_to_ecef` / `vulcan::ecef_to_lla` for geodetic conversion.
+- Use `vulcan::CoordinateFrame<double>::ned(...)` for local tangent frames.
+- Use `vulcan::body_from_quaternion(...)` / `vulcan::body_from_euler(...)` for attitude frames.
+- Keep only rendering-specific math in Daedalus (`RTE`, camera projection, `glm` conversions).
+- Wire CMake directly to Vulcan:
+  - `find_package(vulcan REQUIRED)`
+  - `target_link_libraries(daedalus_lib PUBLIC vulcan::vulcan)`
+
+```cpp
+// coordinate_adapter.hpp (thin bridge)
+inline glm::dvec3 lla_to_ecef(double lat_rad, double lon_rad, double alt_hae_m) {
+    vulcan::LLA<double> lla{lon_rad, lat_rad, alt_hae_m};   // Vulcan order: lon,lat,alt
+    auto r = vulcan::lla_to_ecef(lla);
+    return {r(0), r(1), r(2)};
+}
+```
 
 ### What We Already Have
 
@@ -282,6 +309,17 @@ The file is exposed via `$DAEDALUS_ASSETS_DIR` (same pattern as other assets) se
 
 **Recommendation**: Ship the 50m GeoJSON as a Nix fetchurl derivation. Loaded at startup in ~50ms.
 
+### Terrain Elevation Data
+
+Use AWS Terrarium DEM tiles (public dataset) for terrain height. This keeps the vector style while adding metric ground truth for AGL and ground-relative attitude.
+
+- URL template: `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`
+- Encoding (`R,G,B` 8-bit): `height_m = (R * 256 + G + B / 256) - 32768`
+- Resolution: 256x256 samples per tile
+- Practical zoom target: z10-z13 for flight/launch visualization
+
+The renderer only needs a local tile ring around vehicle/camera (e.g. 5x5 or 7x7), not whole-earth terrain.
+
 ---
 
 ## 5. File Structure
@@ -293,11 +331,13 @@ include/daedalus/world/
     vehicle_renderer.hpp    # Wireframe vehicle marker (cone/arrow)
     trail_renderer.hpp      # Trajectory ring buffer VBO
     effect_renderer.hpp     # FOV cones (wireframe), LOS vectors, ground track
+    terrain_renderer.hpp    # Terrarium DEM decode + terrain wireframe mesh
+    terrain_cache.hpp       # Tile download/cache/sampling API
     camera_controller.hpp   # Arcball / vehicle-follow / free-fly
-    coordinate.hpp          # LLA↔ECEF, ENU/NED frames, RTE transforms
+    coordinate_adapter.hpp  # Thin glm adapter over vulcan coordinate/frame APIs
     bloom_pass.hpp          # Two-pass Gaussian bloom (optional, toggleable)
     gl_util.hpp             # FBO creation, shader compilation helpers
-    coastline_data.hpp      # Pre-baked NE 110m coastline vertices (generated)
+    coastline_data.hpp      # Optional pre-baked coastline fallback for offline startup
 
 src/daedalus/world/
     world_view.cpp
@@ -305,8 +345,10 @@ src/daedalus/world/
     vehicle_renderer.cpp
     trail_renderer.cpp
     effect_renderer.cpp
+    terrain_renderer.cpp
+    terrain_cache.cpp
     camera_controller.cpp
-    coordinate.cpp
+    coordinate_adapter.cpp
     bloom_pass.cpp
     gl_util.cpp
 
@@ -318,9 +360,11 @@ assets/shaders/
     bloom_compose.vert/.frag # Additive composite + Reinhard tone mapping
 
 tests/world/
-    test_coordinate.cpp     # LLA↔ECEF round-trip
+    test_coordinate_adapter.cpp # Adapter parity with Vulcan transforms
     test_globe_geometry.cpp # Graticule vertex count, line strip correctness
     test_trail_buffer.cpp   # Ring buffer push/wrap/capacity
+    test_terrain_height.cpp # Terrarium decode, bilinear sampling, AGL calc
+    test_vehicle_pose.cpp   # ECEF/LLA + attitude input contract
     test_gl_util.cpp        # FBO creation helpers (headless not possible — skip)
 ```
 
@@ -460,32 +504,38 @@ void main() {
 
 For the bloom pass, lines are drawn with RGB values > 1.0 in HDR. Standard (non-bloom) lines use values ≤ 1.0.
 
-### Step 3: Globe Geometry — Unit Sphere, Not ECEF
+### Step 3: Geospatial Model — Context Layer + Metric Layer
 
-**Important**: the globe geometry is rendered on a **unit sphere** (radius = 1.0), not at real WGS84 ECEF scale (~6.4M meters). This avoids float precision issues entirely for the static geometry. Only the vehicle position (which moves and needs precise ECEF math) uses RTE.
+To keep the vector style and still model terrain correctly, this plan uses two rendering layers with one geodetic truth source:
+
+- **Context layer (unit sphere)**: graticule + coastlines only, for low-cost whole-earth context.
+- **Metric layer (ECEF meters + RTE)**: terrain mesh, vehicle, trail, LOS/FOV, and all 6DoF math.
+
+Rules:
+- Vehicle position/orientation is always computed in ECEF.
+- Terrain elevation and AGL are always computed in ellipsoidal meters.
+- Unit-sphere geometry is visual-only and never used for pose/AGL calculations.
 
 ```cpp
-// Unit sphere projection — no precision issues, no RTE needed for globe geometry
-static glm::vec3 latlon_to_unit_sphere(float lat_rad, float lon_rad) {
-    return glm::vec3(
-         std::cos(lat_rad) * std::cos(lon_rad),   // X: 0°/0°
-         std::sin(lat_rad),                        // Y: North Pole
-        -std::cos(lat_rad) * std::sin(lon_rad)    // Z: negate for right-hand convention
-    );
-}
+// Truth source for metric objects
+glm::dvec3 p_vehicle_ecef = input.has_ecef
+    ? input.p_ecef_m
+    : coord::lla_to_ecef(input.lat_rad, input.lon_rad, input.alt_hae_m);
+
+coord::LLA vehicle_lla = input.has_ecef
+    ? coord::ecef_to_lla(p_vehicle_ecef)
+    : coord::LLA{input.lat_rad, input.lon_rad, input.alt_hae_m};
+
+double terrain_h_hae_m = terrain_cache_.sample_height_hae(
+    vehicle_lla.lat, vehicle_lla.lon);   // DEM (Terrarium) in meters above ellipsoid
+double altitude_agl_m = vehicle_lla.alt - terrain_h_hae_m;
 ```
 
-Near/far planes for unit sphere: `near = 0.001`, `far = 10.0`. Z-buffer precision at 24 bits is 1/(2^24 * 0.001/10) ≈ 0.0006 world units — far more than needed.
-
-To prevent z-fighting between graticule and coastlines (both at radius 1.0), render coastlines at `r = 1.001`:
-```cpp
-// Coastline vertex generation
-vec3 v = latlon_to_unit_sphere(lat, lon) * 1.001f;  // 0.1% outward
-```
+Near/far planes for the metric layer are distance-aware (for example `near=5m`, `far=20,000km` when zoomed out; tightened during close-in terrain view) to preserve depth precision.
 
 ### Step 4: Graticule Generation
 
-Latitude/longitude grid lines, generated at startup:
+Latitude/longitude grid lines for the context layer, generated at startup:
 
 ```cpp
 // globe_renderer.cpp
@@ -564,8 +614,9 @@ world_view_.update(signal_buffers_, signal_tree_);
 - [ ] Arcball camera (mouse drag + scroll)
 - [ ] `WorldView` class integrated with Hello ImGui docking
 - [ ] `ImGui::GetIO()` mouse capture so camera only responds when window is hovered
-- [ ] `coordinate.hpp`: `lla_to_ecef`, `ecef_to_lla`, `enu_to_ecef_rotation`, RTE transform
-- [ ] Unit tests: coordinate round-trips, graticule vertex count
+- [ ] `find_package(vulcan REQUIRED)` and link `vulcan::vulcan`
+- [ ] `coordinate_adapter.hpp`: wrappers to Vulcan geodetic/frame APIs + RTE helper
+- [ ] Unit tests: adapter parity checks against Vulcan + graticule vertex count
 
 **Estimated LOC**: ~600–900 C++ + ~80 GLSL
 
@@ -598,8 +649,8 @@ void GlobeRenderer::load_coastlines(const std::string& geojson_path) {
             float lon1 = glm::radians(coords[i+1][0].get<float>());
             float lat1 = glm::radians(coords[i+1][1].get<float>());
 
-            // *** Unit sphere only — NOT lla_to_ecef ***
-            // Globe is unit sphere; coastlines must use the same space.
+            // Context layer only (visual): unit sphere for globe backdrop.
+            // Metric terrain/vehicle remain in ECEF+RTE.
             glm::vec3 p0 = latlon_to_unit_sphere(lat0, lon0) * 1.001f;  // z-offset
             glm::vec3 p1 = latlon_to_unit_sphere(lat1, lon1) * 1.001f;
 
@@ -631,9 +682,30 @@ void GlobeRenderer::load_coastlines(const std::string& geojson_path) {
 
 **50m data size**: ~300 strips × avg 200 pts × 4 verts × 16 bytes ≈ **~4MB VBO**. Uploaded once at init, never touched again.
 
-### Step 3: Wireframe Vehicle
+### Step 3: Wireframe Vehicle + 6DoF Pose Resolution
 
-A minimal orientation indicator: three orthogonal lines (body axes) meeting at the vehicle ECEF position, plus a small diamond/chevron outline:
+Vehicle pose is solved in ECEF from whichever telemetry representation is available. Preferred inputs:
+
+1. Position: ECEF xyz meters (or fallback: LLA lat/lon/alt_hae)
+2. Attitude: quaternion body→ECEF (or fallback: quaternion body→NED + lat/lon, or Euler ZYX in NED)
+
+`coord::*` calls below are thin adapter wrappers over Vulcan APIs; Daedalus does not own these transforms.
+
+```cpp
+// Pose solving (metric layer only)
+glm::dvec3 p_ecef = has_ecef
+    ? ecef_m
+    : coord::lla_to_ecef(lat_rad, lon_rad, alt_hae_m);
+
+glm::dmat3 R_ecef_body = has_q_be
+    ? coord::quat_to_dcm(q_be)
+    : coord::ned_to_ecef_rotation(lat_rad, lon_rad) * coord::attitude_to_dcm_body_in_ned(input);
+
+glm::dmat4 model_ecef = glm::translate(glm::dmat4(1.0), p_ecef) * glm::dmat4(R_ecef_body);
+glm::mat4  model_rte  = coord::rte_transform(model_ecef, camera_ecef);
+```
+
+A minimal orientation indicator still works well visually: three orthogonal lines (body axes) + small diamond/chevron:
 
 ```cpp
 // vehicle_renderer.hpp
@@ -665,10 +737,11 @@ Plus a small "V" chevron in the 2D screen space drawn via `ImGui::GetWindowDrawL
 - [ ] Nix fetchurl derivation for `ne_50m_coastline.geojson`
 - [ ] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
 - [ ] `VehicleRenderer` with body-axis lines and diamond marker
-- [ ] Vehicle position from signal buffers (LLA → ECEF → RTE model matrix)
+- [ ] Pose solver with ECEF-first contract (ECEF/LLA + quaternion/Euler fallbacks)
+- [ ] Vehicle position from signal buffers (LLA/ECEF → ECEF → RTE model matrix)
 - [ ] Dynamic scale based on camera distance
 - [ ] Graceful degradation when position signals absent (globe shown, no vehicle)
-- [ ] Unit tests: coastline vertex parsing, vehicle model matrix
+- [ ] Unit tests: coastline vertex parsing, vehicle pose matrix from all supported input forms
 
 **Estimated LOC**: ~400–600 C++
 
@@ -680,7 +753,7 @@ Plus a small "V" chevron in the 2D screen space drawn via `ImGui::GetWindowDrawL
 
 ### Step 1: Trajectory Trail
 
-Ring-buffer backed, color-coded by altitude or velocity:
+Ring-buffer backed, color-coded by altitude or velocity, with metric positions retained in ECEF:
 
 ```cpp
 // trail_renderer.hpp
@@ -691,9 +764,9 @@ public:
     enum class ColorMode { Altitude, Velocity, Time };
 
     void init();   // allocate VBO/IBO with GL_DYNAMIC_DRAW
-    void push(glm::vec3 globe_pos, float value);  // globe space (unit sphere)
+    void push(glm::dvec3 ecef_pos, float value);  // metric space (ECEF meters)
     void set_color_mode(ColorMode mode);
-    void draw(GLuint line_program, const glm::mat4& vp);
+    void draw(GLuint line_program, const glm::mat4& vp, const glm::dvec3& camera_ecef);
 
 private:
     // CPU ring buffer mirrors the GPU buffer
@@ -709,9 +782,9 @@ private:
     //
     // Result: 1 glBufferSubData(64 bytes) per frame at 1 Hz telemetry = negligible.
 
-    struct LineVertex { glm::vec3 pos; float dist; float value; };
+    struct LineVertex { glm::vec3 pos_rte; float dist; float value; };
     std::array<LineVertex, MAX_TRAIL_POINTS * 4> cpu_ring_;  // CPU mirror
-    glm::vec3  prev_pos_{};
+    glm::dvec3 prev_pos_ecef_{};
     size_t     seg_count_  = 0;
     size_t     head_seg_   = 0;
     GLuint     vao_ = 0, vbo_ = 0, ibo_ = 0;
@@ -740,36 +813,92 @@ A cone outline is 12–16 line segments forming the rim + 4 lines from apex to r
 
 The wireframe cone looks better than a filled transparent cone in this aesthetic — it reads as "sensor coverage" without obscuring the globe geometry beneath.
 
-### Step 3: Ground Track
+### Step 3: Ground Track (Terrain-Clamped)
 
-The trajectory projected onto the surface. The trail stores positions in **two spaces**:
-- **Globe space** (unit sphere): for rendering alongside graticule/coastlines. Project by normalizing to radius 1.0.
-- **ECEF space** (real meters): vehicle position from telemetry, used for RTE vehicle rendering.
+Ground track is projected onto sampled terrain, not an ideal sphere:
 
-The ground track uses globe space:
 ```cpp
-// Vehicle ECEF position (from telemetry) → unit sphere surface
-glm::dvec3 ecef = coord::lla_to_ecef(lat_rad, lon_rad, 0.0);  // alt=0: surface
-glm::vec3  globe_pt = glm::normalize(glm::vec3(ecef)) * 0.999f;  // slightly inside surface
+coord::LLA lla = coord::ecef_to_lla(vehicle_ecef);
+double h_ground = terrain_cache_.sample_height_hae(lla.lat, lla.lon);
+glm::dvec3 p_ground = coord::lla_to_ecef(lla.lat, lla.lon, h_ground);
 ```
 
-**Never mix the two spaces** — all globe geometry (graticule, coastlines, trail, ground track) uses unit sphere. Only the vehicle marker uses real ECEF with RTE.
-
-Rendered as a separate dimmer trail (same color scale but reduced brightness, to differentiate from the true-altitude trail).
+Render both:
+- **True trajectory** in ECEF (actual altitude path)
+- **Ground track** clamped to terrain height (dimmer layer)
 
 ### Phase 5c Deliverables
 
 - [ ] `TrailRenderer` ring buffer with VBO
 - [ ] Altitude/velocity/time color coding via 1D colormap texture
 - [ ] `EffectRenderer`: wireframe FOV cone, LOS vector line
-- [ ] Ground track (surface projection)
+- [ ] Terrain-clamped ground track (DEM sampling, not sphere projection)
 - [ ] ImGui controls: color mode selector, trail length, cone visibility
 
 **Estimated LOC**: ~500–700 C++
 
 ---
 
-## 9. Phase 5d — Bloom Glow Pass
+## 9. Phase 5d — Terrain Elevation + Ground Interaction
+
+**Goal**: render terrain elevation in the same metric frame as the vehicle, and expose AGL/ground-normal data so the 6DoF pose is visually correct relative to local topography.
+
+### Step 1: Tile Cache + Height Sampling
+
+`TerrainCache` owns:
+
+- Async tile fetch queue (`{z,x,y}` around vehicle/camera)
+- PNG decode (`stb_image`)
+- LRU cache of decoded 256x256 height rasters
+- Bilinear sampler `sample_height_hae(lat, lon)`
+
+Terrarium decode:
+```cpp
+inline float terrarium_to_m(uint8_t r, uint8_t g, uint8_t b) {
+    return static_cast<float>(r * 256 + g + b / 256.0f) - 32768.0f;
+}
+```
+
+### Step 2: Terrain Mesh Generation (ECEF + RTE)
+
+For visible tiles (z10-z13), generate a regular grid (e.g. 64x64 samples per tile):
+
+1. Tile UV -> WebMercator lat/lon
+2. Sample DEM height (HAE meters)
+3. Convert `(lat, lon, h)` -> ECEF
+4. Subtract camera ECEF (RTE) and cast to float for GPU buffer
+5. Tessellate as wireframe triangles/contours
+
+This keeps terrain and vehicle in identical metric space.
+
+### Step 3: Ground Normal and Slope
+
+For each vehicle update, compute local ground normal from finite differences around `(lat, lon)`:
+
+```cpp
+glm::dvec3 p_n = coord::lla_to_ecef(lat + dlat, lon, sample(lat + dlat, lon));
+glm::dvec3 p_s = coord::lla_to_ecef(lat - dlat, lon, sample(lat - dlat, lon));
+glm::dvec3 p_e = coord::lla_to_ecef(lat, lon + dlon, sample(lat, lon + dlon));
+glm::dvec3 p_w = coord::lla_to_ecef(lat, lon - dlon, sample(lat, lon - dlon));
+glm::dvec3 n_ground = glm::normalize(glm::cross(p_e - p_w, p_n - p_s));
+```
+
+Use this for HUD readouts (`AGL`, terrain slope) and optional attitude diagnostics (bank/pitch relative to terrain plane).
+
+### Step 4: Terrain Phase Deliverables
+
+- [ ] `TerrainCache` (fetch/decode/LRU/sample) with Terrarium support
+- [ ] `TerrainRenderer` (tile mesh generation + wireframe rendering in RTE)
+- [ ] AGL computation: `h_agl = h_vehicle_hae - h_terrain_hae`
+- [ ] Ground-normal/slope estimation from DEM gradients
+- [ ] ImGui toggles: terrain on/off, tile zoom, vertical exaggeration, contour density
+- [ ] Unit tests: Terrarium decode, bilinear sampling, AGL/normal calculations
+
+**Estimated LOC**: ~600–900 C++
+
+---
+
+## 10. Phase 5e — Bloom Glow Pass
 
 **Goal**: Add the CRT phosphor glow effect that makes the wireframe aesthetic visually distinctive.
 
@@ -818,7 +947,7 @@ Since lines are drawn in HDR (> 1.0), a simple tone mapper prevents clipping:
 vec3 mapped = scene / (scene + vec3(1.0));
 ```
 
-### Phase 5d Deliverables
+### Phase 5e Deliverables
 
 - [ ] `BloomPass` class: downsample FBO, horizontal/vertical blur shaders, composite shader
 - [ ] `u_bloom_strength` uniform controlled from ImGui slider
@@ -829,7 +958,7 @@ vec3 mapped = scene / (scene + vec3(1.0));
 
 ---
 
-## 10. Phase 5e — Camera Modes + HUD Overlay
+## 11. Phase 5f — Camera Modes + HUD Overlay
 
 **Goal**: Multiple camera perspectives and an ImGui DrawList HUD with telemetry readouts.
 
@@ -865,8 +994,8 @@ void WorldView::draw_hud() {
 
     // Top-left: coordinate readout
     char buf[128];
-    snprintf(buf, sizeof(buf), "LAT %+7.3f  LON %+8.3f  ALT %9.1f m",
-             glm::degrees(lat_rad_), glm::degrees(lon_rad_), alt_m_);
+    snprintf(buf, sizeof(buf), "LAT %+7.3f  LON %+8.3f  ALT %9.1f m  AGL %8.1f m",
+             glm::degrees(lat_rad_), glm::degrees(lon_rad_), alt_m_, agl_m_);
     draw->AddText(ImVec2(pos.x + pad, pos.y + pad), cyan, buf);
 
     snprintf(buf, sizeof(buf), "SPD %7.1f m/s  HDG %5.1f deg",
@@ -885,28 +1014,29 @@ void WorldView::draw_hud() {
 
 This uses the existing ImGui draw list — no extra OpenGL draw calls.
 
-### Phase 5e Deliverables
+### Phase 5f Deliverables
 
 - [ ] Three camera modes with smooth transitions
 - [ ] Mouse capture gated on `ImGui::IsWindowHovered()`
-- [ ] HUD overlay: lat/lon/alt, speed, heading, simulation time
+- [ ] HUD overlay: lat/lon/alt/AGL, speed, heading, simulation time
 - [ ] Camera mode selector (radio buttons or tab strip in panel header)
-- [ ] ImGui settings panel: theme picker, bloom toggle/strength, line width scale
+- [ ] ImGui settings panel: theme picker, bloom toggle/strength, line width scale, terrain controls
 
 ---
 
-## 11. Coordinate Math Reference
+## 12. Coordinate Math Reference
 
-Same math as Plan A — no change needed. Reproduced here for completeness.
+Implementation source of truth is Vulcan (`include/vulcan/coordinates/*`). This section is reference math only; code paths call Vulcan via `coordinate_adapter.hpp`.
 
 ### Frame Definitions
 
 | Frame | Usage |
 |:------|:------|
-| **ECEF** | Primary rendering frame |
-| **LLA** | Human-readable position (WGS84) |
-| **NED** | Velocity, attitude reference |
+| **ECEF** | Metric truth frame for terrain + vehicle |
+| **LLA** | Human-readable position (WGS84, altitude HAE by default) |
+| **NED** | Velocity, attitude fallback reference |
 | **Body** | Vehicle-fixed |
+| **Terrain tangent** | Local plane from DEM gradient at vehicle position |
 
 ### Key Formulas
 
@@ -918,42 +1048,93 @@ Y = (N + alt) cos(lat) sin(lon)
 Z = (N(1-e²) + alt) sin(lat)
 ```
 
-**ENU-to-ECEF rotation**:
+**NED-to-ECEF rotation**:
 ```
-R = [ -sin(lon)         -cos(lon)sin(lat)    cos(lon)cos(lat) ]
-    [  cos(lon)         -sin(lon)sin(lat)    sin(lon)cos(lat) ]
-    [  0                 cos(lat)             sin(lat)         ]
+R = [ -sin(lat)cos(lon)   -sin(lon)   -cos(lat)cos(lon) ]
+    [ -sin(lat)sin(lon)    cos(lon)   -cos(lat)sin(lon) ]
+    [  cos(lat)            0          -sin(lat)          ]
+```
+
+**Vehicle orientation composition**:
+```
+R_ecef_body = R_ecef_ned(lat, lon) * R_ned_body(attitude_input)
+```
+
+**AGL (terrain-relative altitude)**:
+```
+h_agl = h_vehicle_hae - h_terrain_hae(lat, lon)
 ```
 
 **Relative-to-Eye (RTE)** for GPU precision:
 ```cpp
-// Compute in double, cast to float for GPU
-glm::mat4 rte_vp = glm::mat4(
-    glm::dmat4(proj) * glm::dmat4(view) *
-    glm::translate(glm::dmat4(1.0), -camera_ecef_d)
-);
+glm::dvec3 p_rte_d = p_world_ecef_d - camera_ecef_d;
+glm::vec3  p_rte_f = glm::vec3(p_rte_d);  // submit as float vertex data
 ```
 
-At typical altitudes (0–2,000 km), the distance from camera to vehicle is <2,000 km, well within `float` precision after RTE subtraction.
+At typical altitudes (0–2,000 km), `p_rte` remains well within float precision after subtraction.
 
 ---
 
-## 12. Risk Register
+## 13. Terrain + 6DoF Contract
+
+To avoid ambiguity, world_view uses a strict input contract with explicit frame metadata:
+
+```cpp
+struct PoseInput {
+    // Position: provide EITHER ECEF or LLA
+    std::optional<glm::dvec3> ecef_m;
+    std::optional<double> lat_rad, lon_rad, alt_hae_m;
+
+    // Attitude: preferred body->ECEF quaternion
+    std::optional<glm::dquat> q_body_to_ecef;
+
+    // Fallback attitude forms
+    std::optional<glm::dquat> q_body_to_ned;
+    std::optional<double> yaw_rad, pitch_rad, roll_rad;  // ZYX in NED
+};
+```
+
+Resolution priority:
+
+1. Position: ECEF -> LLA
+2. Position fallback: LLA -> ECEF
+3. Attitude: `q_body_to_ecef`
+4. Attitude fallback: `R_ecef_ned * q_body_to_ned`
+5. Attitude fallback: `R_ecef_ned * euler_zyx(yaw,pitch,roll)`
+
+Validation requirements:
+
+- Reject NaN/inf and non-unit quaternions (normalize if within tolerance)
+- Reject impossible LLA (`|lat| > π/2`, `|lon| > π`)
+- Log missing altitude datum; default to HAE only
+- Publish diagnostics: `alt_hae`, `terrain_hae`, `alt_agl`, `ground_slope_deg`
+
+Backend requirement:
+
+- Coordinate transforms must route through Vulcan APIs (no duplicate geodesy/frame formulas in Daedalus).
+- Adapter layer owns only type conversion (`vulcan::Vec3<double>` / Janus quaternion <-> `glm`) and RTE helpers.
+
+---
+
+## 14. Risk Register
 
 | Risk | Impact | Likelihood | Mitigation |
 |:-----|:-------|:-----------|:-----------|
 | **ImGui GL state corruption** | Blank/corrupted UI | Medium | `GlStateGuard` RAII in `WorldView::render()` saves and restores all 16 state variables — see Appendix C |
-| **Coordinate space mismatch** | Coastlines/vehicle misaligned | Medium | Globe geometry (graticule, coastlines, trail) uses unit sphere; vehicle only uses ECEF with RTE — enforced by distinct `latlon_to_unit_sphere()` vs `lla_to_ecef()` functions |
+| **Coordinate space mismatch** | Terrain/vehicle misaligned | Medium | Metric layer always uses ECEF+RTE. Unit sphere kept as context-only overlay; never used for pose math. |
 | **Degenerate line segments** | NaN/inf in vertex data | Low | `push_segment()` guards with `distance(p0,p1) < 1e-9` before expanding to quad |
 | **WASM line rendering** | Wide lines broken on WebGL | N/A | Primary path uses CPU-tessellated `GL_TRIANGLES` — works on WebGL2 with no changes |
 | **Coastline GeoJSON unavailable offline** | No coastlines at startup | Low | Nix `fetchurl` derivation SHA256-pins download; CI bundles asset |
+| **Terrain tile unavailable offline** | No local terrain mesh | Low | Nix-pinned fallback cache (z0-z8) + runtime graceful fallback to ellipsoid height `0m` |
+| **Altitude datum mismatch (MSL vs HAE)** | Wrong AGL readout | Medium | Explicit datum contract in signals; optional geoid correction stage |
+| **Vulcan API/version drift** | Build break in adapter layer | Medium | Pin Vulcan via flake lock; isolate usage in `coordinate_adapter.*`; add adapter parity tests |
 | **Bloom on integrated GPU** | FPS drop | Low | Bloom is optional (checkbox). Default: off. The scene looks good without it. |
 | **Mouse capture conflict** | Can't orbit globe | Medium | `ImGui::IsWindowHovered()` guard before routing mouse events to camera |
 | **Trail VBO full re-upload on wrap** | Single frame stutter | Very low | Happens once per 100K points. At 1 Hz telemetry ≈ once per 28 hours. |
 
 ---
 
-## 13. Comparison Matrix
+## 15. Comparison Matrix
 
 | Criterion | Plan A (Filament) | Plan B (osgEarth) | Plan C (FlightGear) | **Plan D (Vector)** |
 |:----------|:-----------------|:-----------------|:--------------------|:--------------------|
@@ -963,26 +1144,29 @@ At typical altitudes (0–2,000 km), the distance from camera to vehicle is <2,0
 | **New Nix derivation needed** | Yes (200MB+) | Yes (300MB+) | None | **None** |
 | **WASM (Phase 6)** | Yes | No | No | **Yes** |
 | **Trail/cones/HUD** | Yes (custom) | Yes (custom) | Partial | **Yes (native)** |
-| **LOC for globe** | ~3,000+ | ~500 (port) | ~150 | **~1,200** |
+| **LOC for globe** | ~3,000+ | ~500 (port) | ~150 | **~1,800** |
 | **Photorealistic globe** | Possible | Yes | Yes | **No (intentionally)** |
-| **Terrain elevation** | Deferred | Yes | Yes | **Not needed for vector** |
-| **Dependency footprint** | Very large | Very large | External binary | **Minimal** |
+| **Terrain elevation** | Deferred | Yes | Yes | **Yes (local DEM mesh + AGL)** |
+| **Dependency footprint** | Very large | Very large | External binary | **Medium-low (Vulcan + header-only decode, no GIS engine)** |
 | **Build time** | Weeks to stabilize | Weeks to stabilize | Zero | **Minutes** |
-| **License** | Apache 2.0 | LGPL-3.0 | GPL-2.0 | **Apache 2.0 (own code)** |
+| **License** | Apache 2.0 | LGPL-3.0 | GPL-2.0 | **Apache 2.0 + MIT deps** |
 | **Debugging** | Complex (engine internals) | Complex (OSG) | Opaque | **Transparent** |
 
 ---
 
-## 14. Dependencies Summary
+## 16. Dependencies Summary
 
 ### New in Phase 5 (Plan D only)
 
 | Dependency | Source | Purpose | Phase |
 |:-----------|:-------|:--------|:------|
+| **vulcan** | Pantheon stack / Nix input | Vetted LLA/ECEF/NED/Body transforms | 5a |
 | **glm** | nixpkgs | Math (vec3, mat4, quat) | 5a |
 | **ne_50m_coastline.geojson** | Nix fetchurl (naturalearthdata.com) | Coastline vector data | 5b |
+| **stb_image** (header-only) | bundled | Terrarium PNG decode | 5d |
+| **Terrarium DEM tiles** | AWS Open Data `elevation-tiles-prod` | Terrain height sampling + mesh | 5d |
 
-That's it. `nlohmann_json` (already present) loads the GeoJSON. No new libraries needed.
+`nlohmann_json` (already present) continues to load coastline GeoJSON and settings. `janus` comes transitively with Vulcan.
 
 ### What We Use from Existing Stack
 
