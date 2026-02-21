@@ -5,7 +5,6 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <cstdint>
 #include <cstdio>
 #include <exception>
 
@@ -49,11 +48,11 @@ void WorldView::handle_input() {
     }
 
     ImGuiIO &io = ImGui::GetIO();
-    if (!io.WantCaptureMouse && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         camera_.handle_drag(io.MouseDelta.x, io.MouseDelta.y);
     }
 
-    if (!io.WantCaptureMouse && io.MouseWheel != 0.0f) {
+    if (io.MouseWheel != 0.0f) {
         camera_.handle_scroll(io.MouseWheel);
     }
 }
