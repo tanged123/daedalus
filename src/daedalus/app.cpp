@@ -189,6 +189,8 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     HelloImGui::DockableWindow world_window;
     world_window.label = "3D World";
     world_window.dockSpaceName = "MainDockSpace";
+    world_window.imGuiWindowFlags =
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     world_window.GuiFunction = [this] { world_view_.render(); };
 
     HelloImGui::DockableWindow console_window;

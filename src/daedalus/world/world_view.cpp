@@ -98,8 +98,6 @@ void WorldView::render() {
 
     ImGui::Image(static_cast<ImTextureID>(scene_fbo_.color_tex), panel_size, ImVec2(0.0f, 1.0f),
                  ImVec2(1.0f, 0.0f));
-
-    ImGui::TextDisabled("Drag: orbit  |  Scroll: zoom");
 }
 
 } // namespace daedalus::world
