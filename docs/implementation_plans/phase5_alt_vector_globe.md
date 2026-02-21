@@ -608,15 +608,15 @@ world_view_.update(signal_buffers_, signal_tree_);
 
 ### Phase 5a Deliverables
 
-- [ ] `gl_util`: FBO creation/resize, shader compilation helpers
-- [ ] Line vertex/geometry/fragment shaders with Gaussian edge softening
-- [ ] Graticule with dim/bright layers (15° dim, 30° brighter, special lines highlighted)
-- [ ] Arcball camera (mouse drag + scroll)
-- [ ] `WorldView` class integrated with Hello ImGui docking
-- [ ] `ImGui::GetIO()` mouse capture so camera only responds when window is hovered
-- [ ] `find_package(vulcan REQUIRED)` and link `vulcan::vulcan`
-- [ ] `coordinate_adapter.hpp`: wrappers to Vulcan geodetic/frame APIs + RTE helper
-- [ ] Unit tests: adapter parity checks against Vulcan + graticule vertex count
+- [x] `gl_util`: FBO creation/resize, shader compilation helpers
+- [x] Line vertex/geometry/fragment shaders with Gaussian edge softening
+- [x] Graticule with dim/bright layers (15° dim, 30° brighter, special lines highlighted)
+- [x] Arcball camera (mouse drag + scroll)
+- [x] `WorldView` class integrated with Hello ImGui docking
+- [x] `ImGui::GetIO()` mouse capture so camera only responds when window is hovered
+- [x] `find_package(vulcan REQUIRED)` and link `vulcan::vulcan`
+- [x] `coordinate_adapter.hpp`: wrappers to Vulcan geodetic/frame APIs + RTE helper
+- [x] Unit tests: adapter parity checks against Vulcan + graticule vertex count
 
 **Estimated LOC**: ~600–900 C++ + ~80 GLSL
 
@@ -735,13 +735,13 @@ Plus a small "V" chevron in the 2D screen space drawn via `ImGui::GetWindowDrawL
 ### Phase 5b Deliverables
 
 - [ ] Nix fetchurl derivation for `ne_50m_coastline.geojson`
-- [ ] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
-- [ ] `VehicleRenderer` with body-axis lines and diamond marker
-- [ ] Pose solver with ECEF-first contract (ECEF/LLA + quaternion/Euler fallbacks)
-- [ ] Vehicle position from signal buffers (LLA/ECEF → ECEF → RTE model matrix)
-- [ ] Dynamic scale based on camera distance
-- [ ] Graceful degradation when position signals absent (globe shown, no vehicle)
-- [ ] Unit tests: coastline vertex parsing, vehicle pose matrix from all supported input forms
+- [x] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
+- [x] `VehicleRenderer` with body-axis lines and diamond marker
+- [x] Pose solver with ECEF-first contract (ECEF/LLA + quaternion/Euler fallbacks)
+- [x] Vehicle position from signal buffers (LLA/ECEF → ECEF → RTE model matrix)
+- [x] Dynamic scale based on camera distance
+- [x] Graceful degradation when position signals absent (globe shown, no vehicle)
+- [x] Unit tests: coastline vertex parsing, vehicle pose matrix from all supported input forms
 
 **Estimated LOC**: ~400–600 C++
 

@@ -58,5 +58,6 @@ GLuint link_program(GLuint vertex_shader, GLuint geometry_shader, GLuint fragmen
 
 std::string read_text_file(const std::filesystem::path &path);
 std::filesystem::path resolve_assets_dir();
+std::filesystem::path resolve_coastline_geojson_path();
 
 } // namespace daedalus::world::gl

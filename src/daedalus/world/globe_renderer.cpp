@@ -1,10 +1,16 @@
 #include "daedalus/world/globe_renderer.hpp"
+#include "daedalus/world/gl_util.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
+#include <nlohmann/json.hpp>
 
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <fstream>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace daedalus::world {
 
@@ -15,8 +21,13 @@ constexpr int kSegmentsPerHalfCircle = 180;
 constexpr int kMajorStepDeg = 30;
 constexpr float kTropicLatDeg = 23.436f;
 constexpr float kPolarCircleLatDeg = 66.564f;
+constexpr float kCoastlineRadius = 1.001f;
 
 [[nodiscard]] bool is_major_line(int deg) { return (std::abs(deg) % kMajorStepDeg) == 0; }
+
+[[nodiscard]] bool is_coordinate_pair(const nlohmann::json &coord) {
+    return coord.is_array() && coord.size() >= 2 && coord[0].is_number() && coord[1].is_number();
+}
 
 } // namespace
 
@@ -61,6 +72,60 @@ GraticuleGeometry GlobeRenderer::build_graticule(int step_deg) {
     return geo;
 }
 
+CoastlineGeometry GlobeRenderer::parse_coastline_geojson(std::string_view geojson_text) {
+    const nlohmann::json root = nlohmann::json::parse(geojson_text);
+    if (!root.contains("features") || !root["features"].is_array()) {
+        throw std::runtime_error("Coastline GeoJSON missing features array");
+    }
+
+    CoastlineGeometry out;
+    auto process_strip = [&out](const nlohmann::json &coords) {
+        if (!coords.is_array() || coords.size() < 2) {
+            return;
+        }
+
+        for (size_t i = 0; i + 1 < coords.size(); ++i) {
+            const nlohmann::json &c0 = coords[i];
+            const nlohmann::json &c1 = coords[i + 1];
+            if (!is_coordinate_pair(c0) || !is_coordinate_pair(c1)) {
+                continue;
+            }
+
+            const float lon0 = glm::radians(c0[0].get<float>());
+            const float lat0 = glm::radians(c0[1].get<float>());
+            const float lon1 = glm::radians(c1[0].get<float>());
+            const float lat1 = glm::radians(c1[1].get<float>());
+
+            out.vertices.push_back(
+                LineVertex{latlon_to_unit_sphere(lat0, lon0) * kCoastlineRadius, 0.0f});
+            out.vertices.push_back(
+                LineVertex{latlon_to_unit_sphere(lat1, lon1) * kCoastlineRadius, 0.0f});
+            ++out.segment_count;
+        }
+    };
+
+    for (const auto &feature : root["features"]) {
+        if (!feature.contains("geometry") || !feature["geometry"].is_object()) {
+            continue;
+        }
+        const auto &geom = feature["geometry"];
+        if (!geom.contains("type") || !geom["type"].is_string() || !geom.contains("coordinates")) {
+            continue;
+        }
+
+        const std::string type = geom["type"].get<std::string>();
+        if (type == "LineString") {
+            process_strip(geom["coordinates"]);
+        } else if (type == "MultiLineString" && geom["coordinates"].is_array()) {
+            for (const auto &strip : geom["coordinates"]) {
+                process_strip(strip);
+            }
+        }
+    }
+
+    return out;
+}
+
 void GlobeRenderer::init(const std::filesystem::path &shader_dir) {
     shutdown();
 
@@ -75,6 +140,7 @@ void GlobeRenderer::init(const std::filesystem::path &shader_dir) {
     glDeleteShader(frag);
 
     vp_uniform_ = glGetUniformLocation(line_program_, "u_vp");
+    model_uniform_ = glGetUniformLocation(line_program_, "u_model");
     color_uniform_ = glGetUniformLocation(line_program_, "u_color");
     soft_edge_uniform_ = glGetUniformLocation(line_program_, "u_soft_edge");
 
@@ -82,6 +148,7 @@ void GlobeRenderer::init(const std::filesystem::path &shader_dir) {
     upload_layer(dim_layer_, geometry_.dim_vertices);
     upload_layer(major_layer_, geometry_.major_vertices);
     upload_layer(special_layer_, geometry_.special_vertices);
+    load_coastlines(gl::resolve_coastline_geojson_path());
 
     initialized_ = true;
 }
@@ -90,6 +157,7 @@ void GlobeRenderer::shutdown() {
     destroy_layer(dim_layer_);
     destroy_layer(major_layer_);
     destroy_layer(special_layer_);
+    destroy_layer(coastline_layer_);
 
     if (line_program_ != 0) {
         glDeleteProgram(line_program_);
@@ -97,8 +165,11 @@ void GlobeRenderer::shutdown() {
     }
 
     vp_uniform_ = -1;
+    model_uniform_ = -1;
     color_uniform_ = -1;
     soft_edge_uniform_ = -1;
+    coastlines_loaded_ = false;
+    coastline_segment_count_ = 0;
     initialized_ = false;
 }
 
@@ -109,6 +180,8 @@ void GlobeRenderer::draw(const glm::mat4 &vp) const {
 
     glUseProgram(line_program_);
     glUniformMatrix4fv(vp_uniform_, 1, GL_FALSE, glm::value_ptr(vp));
+    const glm::mat4 identity(1.0f);
+    glUniformMatrix4fv(model_uniform_, 1, GL_FALSE, glm::value_ptr(identity));
 
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -117,6 +190,7 @@ void GlobeRenderer::draw(const glm::mat4 &vp) const {
     draw_layer(dim_layer_, glm::vec4(0.0f, 0.25f, 0.12f, 0.65f), 1.0f, 2.0f);
     draw_layer(major_layer_, glm::vec4(0.0f, 0.45f, 0.20f, 0.85f), 1.2f, 4.0f);
     draw_layer(special_layer_, glm::vec4(0.0f, 1.1f, 0.45f, 0.95f), 1.6f, 6.0f);
+    draw_layer(coastline_layer_, glm::vec4(0.0f, 0.85f, 0.3f, 0.92f), 1.4f, 4.0f);
 
     glBindVertexArray(0);
     glUseProgram(0);
@@ -202,6 +276,30 @@ void GlobeRenderer::draw_layer(const Layer &layer, const glm::vec4 &color, float
     glLineWidth(line_width);
     glBindVertexArray(layer.vao);
     glDrawArrays(GL_LINES, 0, layer.vertex_count);
+}
+
+void GlobeRenderer::load_coastlines(const std::filesystem::path &geojson_path) {
+    destroy_layer(coastline_layer_);
+    coastlines_loaded_ = false;
+    coastline_segment_count_ = 0;
+
+    if (geojson_path.empty() || !std::filesystem::exists(geojson_path)) {
+        return;
+    }
+
+    try {
+        const std::string payload = gl::read_text_file(geojson_path);
+        const CoastlineGeometry coast = parse_coastline_geojson(payload);
+        upload_layer(coastline_layer_, coast.vertices);
+        coastline_segment_count_ = coast.segment_count;
+        coastlines_loaded_ = coastline_layer_.vertex_count > 0;
+    } catch (const std::exception &e) {
+        std::fprintf(stderr, "[Daedalus] Coastline load failed (%s): %s\n",
+                     geojson_path.string().c_str(), e.what());
+        destroy_layer(coastline_layer_);
+        coastlines_loaded_ = false;
+        coastline_segment_count_ = 0;
+    }
 }
 
 } // namespace daedalus::world

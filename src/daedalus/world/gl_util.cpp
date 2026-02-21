@@ -218,4 +218,12 @@ std::filesystem::path resolve_assets_dir() {
 #endif
 }
 
+std::filesystem::path resolve_coastline_geojson_path() {
+    if (const char *env = std::getenv("DAEDALUS_COASTLINE_GEOJSON");
+        env != nullptr && env[0] != '\0') {
+        return std::filesystem::path(env);
+    }
+    return resolve_assets_dir() / "data" / "ne_50m_coastline.geojson";
+}
+
 } // namespace daedalus::world::gl

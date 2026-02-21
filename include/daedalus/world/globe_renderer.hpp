@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 namespace daedalus::world {
@@ -30,6 +31,11 @@ struct GraticuleGeometry {
     }
 };
 
+struct CoastlineGeometry {
+    std::vector<LineVertex> vertices;
+    std::size_t segment_count = 0;
+};
+
 class GlobeRenderer {
   public:
     GlobeRenderer() = default;
@@ -39,6 +45,7 @@ class GlobeRenderer {
     GlobeRenderer &operator=(const GlobeRenderer &) = delete;
 
     static GraticuleGeometry build_graticule(int step_deg = 15);
+    static CoastlineGeometry parse_coastline_geojson(std::string_view geojson_text);
 
     void init(const std::filesystem::path &shader_dir);
     void shutdown();
@@ -46,6 +53,8 @@ class GlobeRenderer {
 
     [[nodiscard]] bool is_initialized() const { return initialized_; }
     [[nodiscard]] const GraticuleGeometry &geometry() const { return geometry_; }
+    [[nodiscard]] bool has_coastlines() const { return coastlines_loaded_; }
+    [[nodiscard]] std::size_t coastline_segment_count() const { return coastline_segment_count_; }
 
   private:
     struct Layer {
@@ -65,10 +74,12 @@ class GlobeRenderer {
 
     void draw_layer(const Layer &layer, const glm::vec4 &color, float line_width,
                     float soft_edge) const;
+    void load_coastlines(const std::filesystem::path &geojson_path);
 
     bool initialized_ = false;
     GLuint line_program_ = 0;
     GLint vp_uniform_ = -1;
+    GLint model_uniform_ = -1;
     GLint color_uniform_ = -1;
     GLint soft_edge_uniform_ = -1;
 
@@ -76,6 +87,9 @@ class GlobeRenderer {
     Layer dim_layer_;
     Layer major_layer_;
     Layer special_layer_;
+    Layer coastline_layer_;
+    bool coastlines_loaded_ = false;
+    std::size_t coastline_segment_count_ = 0;
 };
 
 } // namespace daedalus::world

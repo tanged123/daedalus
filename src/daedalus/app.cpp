@@ -209,7 +209,7 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     runner_params.callbacks.BeforeImGuiRender = [this] {
         process_events();
         process_telemetry();
-        world_view_.update(signal_buffers_);
+        world_view_.update(signal_buffers_, subscribed_signals_);
     };
 
     // Connect to Hermes on startup

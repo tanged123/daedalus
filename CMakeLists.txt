@@ -78,6 +78,8 @@ add_library(
   src/daedalus/world/camera_controller.cpp
   src/daedalus/world/coordinate_adapter.cpp
   src/daedalus/world/globe_renderer.cpp
+  src/daedalus/world/vehicle_pose.cpp
+  src/daedalus/world/vehicle_renderer.cpp
   src/daedalus/world/world_view.cpp)
 
 target_include_directories(daedalus_lib
@@ -126,7 +128,9 @@ if(BUILD_TESTING)
     tests/views/test_inspector.cpp
     tests/views/test_topology.cpp
     tests/world/test_coordinate_adapter.cpp
-    tests/world/test_globe_geometry.cpp)
+    tests/world/test_globe_geometry.cpp
+    tests/world/test_coastline_parser.cpp
+    tests/world/test_vehicle_pose.cpp)
 
   target_link_libraries(daedalus_tests PRIVATE daedalus_lib GTest::gtest
                                                GTest::gtest_main)
