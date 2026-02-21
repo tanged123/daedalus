@@ -9,6 +9,7 @@
 #include "daedalus/views/inspector.hpp"
 #include "daedalus/views/plotter.hpp"
 #include "daedalus/views/topology.hpp"
+#include "daedalus/world/world_view.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -69,6 +70,7 @@ class App {
     views::TopologyView topology_view_;
     views::TopologyGraph introspection_graph_;
     views::TopologyView introspection_view_;
+    world::WorldView world_view_;
     std::string introspection_module_;
     std::optional<std::string> introspection_module_type_;
     std::vector<std::string> introspection_execution_order_;

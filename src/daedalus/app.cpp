@@ -186,16 +186,18 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     topology_window.dockSpaceName = "MainDockSpace";
     topology_window.GuiFunction = [this] { render_topology(); };
 
+    HelloImGui::DockableWindow world_window;
+    world_window.label = "3D World";
+    world_window.dockSpaceName = "MainDockSpace";
+    world_window.GuiFunction = [this] { world_view_.render(); };
+
     HelloImGui::DockableWindow console_window;
     console_window.label = "Console";
     console_window.dockSpaceName = "ConsoleSpace";
     console_window.GuiFunction = [this] { render_console(); };
 
     runner_params.dockingParams.dockableWindows = {
-        signals_window,
-        plots_window,
-        topology_window,
-        console_window,
+        signals_window, plots_window, topology_window, world_window, console_window,
     };
 
     // Status bar: connection status
@@ -205,13 +207,20 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     runner_params.callbacks.BeforeImGuiRender = [this] {
         process_events();
         process_telemetry();
+        world_view_.update(signal_buffers_);
     };
 
     // Connect to Hermes on startup
-    runner_params.callbacks.PostInit = [this] { client_->connect(); };
+    runner_params.callbacks.PostInit = [this] {
+        world_view_.init();
+        client_->connect();
+    };
 
     // Disconnect on exit
-    runner_params.callbacks.BeforeExit = [this] { client_->disconnect(); };
+    runner_params.callbacks.BeforeExit = [this] {
+        world_view_.shutdown();
+        client_->disconnect();
+    };
 
     // Run with ImmApp (includes ImPlot initialization for future use)
     ImmApp::AddOnsParams addons;

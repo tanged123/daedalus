@@ -52,6 +52,13 @@ endif()
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(glm REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(casadi REQUIRED)
+find_package(HighFive REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(janus REQUIRED)
+find_package(vulcan REQUIRED)
 
 # =============================================================================
 # Main library
@@ -66,14 +73,29 @@ add_library(
   src/daedalus/views/console.cpp
   src/daedalus/views/controls.cpp
   src/daedalus/views/inspector.cpp
-  src/daedalus/views/topology.cpp)
+  src/daedalus/views/topology.cpp
+  src/daedalus/world/gl_util.cpp
+  src/daedalus/world/camera_controller.cpp
+  src/daedalus/world/coordinate_adapter.cpp
+  src/daedalus/world/globe_renderer.cpp
+  src/daedalus/world/world_view.cpp)
 
 target_include_directories(daedalus_lib
                            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+target_compile_definitions(
+  daedalus_lib
+  PUBLIC DAEDALUS_ASSETS_DIR_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+
 target_link_libraries(
-  daedalus_lib PUBLIC imgui_bundle::imgui_bundle ixwebsocket::ixwebsocket
-                      nlohmann_json::nlohmann_json OpenGL::GL Threads::Threads)
+  daedalus_lib
+  PUBLIC imgui_bundle::imgui_bundle
+         ixwebsocket::ixwebsocket
+         nlohmann_json::nlohmann_json
+         OpenGL::GL
+         Threads::Threads
+         glm::glm
+         vulcan::vulcan)
 
 # =============================================================================
 # Main executable
@@ -102,7 +124,9 @@ if(BUILD_TESTING)
     tests/views/test_console.cpp
     tests/views/test_controls.cpp
     tests/views/test_inspector.cpp
-    tests/views/test_topology.cpp)
+    tests/views/test_topology.cpp
+    tests/world/test_coordinate_adapter.cpp
+    tests/world/test_globe_geometry.cpp)
 
   target_link_libraries(daedalus_tests PRIVATE daedalus_lib GTest::gtest
                                                GTest::gtest_main)

@@ -15,6 +15,16 @@
     # Hermes orchestration platform (provides protocol definitions)
     hermes.url = "github:tanged123/hermes";
 
+    # Math/coordinate dependencies used by Vulcan
+    janus = {
+      url = "github:tanged123/janus";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    vulcan = {
+      url = "github:tanged123/vulcan";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Use hermes's nixpkgs for consistency across the stack
     nixpkgs.follows = "hermes/nixpkgs";
   };
@@ -26,12 +36,16 @@
       flake-utils,
       treefmt-nix,
       hermes,
+      janus,
+      vulcan,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stdenv = pkgs.llvmPackages_latest.stdenv;
+        janusPackage = janus.packages.${system}.default;
+        vulcanPackage = vulcan.packages.${system}.default;
 
         # ImGui Bundle — custom derivation (not in nixpkgs)
         imgui-bundle = stdenv.mkDerivation {
@@ -133,6 +147,8 @@
 
           buildInputs = [
             imgui-bundle
+            janusPackage
+            vulcanPackage
             # Windowing / OpenGL (needed at link time)
             pkgs.glfw
             pkgs.libGL
@@ -149,8 +165,13 @@
             # Networking (IXWebSocket FetchContent deps)
             pkgs.openssl
             pkgs.zlib
-            # Data
+            # Data / math
             pkgs.nlohmann_json
+            pkgs.glm
+            pkgs.eigen
+            pkgs.casadi
+            pkgs.highfive
+            pkgs.yaml-cpp
           ];
 
           cmakeFlags = [
@@ -170,6 +191,8 @@
           packages = [
             imgui-bundle
             hermes.packages.${system}.hermes
+            janusPackage
+            vulcanPackage
           ]
           ++ (with pkgs; [
             # Build tools
@@ -193,8 +216,13 @@
             # Networking (IXWebSocket FetchContent deps)
             openssl
             zlib
-            # Data formats
+            # Data formats / math
             nlohmann_json
+            glm
+            eigen
+            casadi
+            highfive
+            yaml-cpp
             # Testing
             gtest
             # Dev tools
@@ -208,8 +236,8 @@
           ]);
 
           shellHook = ''
-            # Propagate Nix cmake paths so find_package() works in manual builds
-            export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            # Propagate cmake paths so find_package() can resolve flake inputs.
+            export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH:${janusPackage}:${vulcanPackage}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             # GLFW's Wayland backend dlopens these at runtime, so expose them explicitly.
             export LD_LIBRARY_PATH="${
               pkgs.lib.makeLibraryPath [
@@ -218,6 +246,7 @@
                 pkgs.libdecor
               ]
             }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export DAEDALUS_ASSETS_DIR="$PWD/assets"
             echo "Daedalus dev environment loaded"
             echo "  - C++ compiler: $(c++ --version | head -1)"
             echo "  - Hermes CLI:   $(hermes --version)"
