@@ -35,8 +35,8 @@ The existing three plans each add a major rendering engine to get a photorealist
 | OpenGL already in the project | Adds second engine | Replaces imgui_bundle | External process | **Uses what exists** |
 | New derivation complexity | ~200MB Nix build | ~300MB Nix build | None needed | **None needed** |
 | Visual coherence with ImGui UI | Low (PBR≠terminal) | Low (photorealistic) | None (separate window) | **High (same language)** |
-| WASM (Phase 6) | Yes (WebGL2) | No (dead end) | No (external process) | **Yes (WebGL2 = OpenGL ES)** |
-| Lines, trails, cones | Custom | Custom | Limited | **Native (GL_LINES++)** |
+| WASM (Phase 6) | Yes (WebGL2) | No (dead end) | No (external process) | **Yes (WebGL2, vertex-only shader path)** |
+| Lines, trails, cones | Custom | Custom | Limited | **Native (GL_TRIANGLES)** |
 | LOC for globe | ~2,000–3,500 | ~500 (port cost) | ~150 | **~1,200–1,800** |
 
 **Key insight**: OpenGL is already linked via `OpenGL::GL` in CMakeLists.txt and GLFW is already present via imgui_bundle. We can open an FBO, draw into it, and display it as `ImGui::Image()` — *without adding a single new library dependency for the rendering.*
@@ -123,14 +123,17 @@ HUD text:      #8090b0
 
 All geometry is lines. The "phosphor glow" comes from two techniques stacked:
 
-1. **Geometry shader quad expansion** — each line segment expands into a screen-aligned quad. The fragment shader applies a Gaussian falloff from the line center, creating a soft anti-aliased edge at no extra GPU cost:
+1. **CPU quad tessellation (primary path, WASM-compatible)** — each line segment is expanded to a screen-aligned quad *on the CPU at init time* for static geometry (graticule, coastlines). Dynamic geometry (trail) expands each new segment on push. This requires only vertex + fragment shaders and works identically on desktop GL 3.3 and WebGL2 (no geometry shader stage exists in WebGL):
    ```glsl
    // Fragment: smooth line edge with glow core
-   float alpha = exp(-dist_from_center * dist_from_center * falloff);
-   frag_color = vec4(line_color, alpha);
+   in float v_dist;  // [-1, 1] from line center, set by CPU tessellation
+   float alpha = exp(-v_dist * v_dist * u_soft_edge) * u_color.a;
+   frag_color = vec4(u_color.rgb, alpha);
    ```
 
 2. **Optional bloom pass** — a 2-pass Gaussian blur of the bright regions, composited back, creating the "light bleeding" halo seen on CRT displays. Adds ~0.5ms and can be toggled.
+
+> **Why not geometry shaders?** OpenGL 3.3 core requires GS support, but WebGL (Phase 6) has only vertex + fragment stages. `glLineWidth > 1.0` is also not guaranteed in core profile. CPU tessellation is the only approach that works unchanged on all three targets: desktop GL, future WebGL2, and CI headless. Geometry shaders are a desktop-only optimization that can be added later as an optional path.
 
 Line widths by semantic role:
 ```
@@ -308,15 +311,11 @@ src/daedalus/world/
     gl_util.cpp
 
 assets/shaders/
-    line.vert               # Passthrough — transforms ECEF vertex to clip space
-    line.geom               # Quad expansion — line segment → screen-aligned quad
-    line.frag               # Gaussian edge falloff, emissive color
+    line.vert               # Transforms pre-tessellated quad corners to clip space
+    line.frag               # Gaussian edge falloff, emissive color, optional colormap
     bloom_down.vert/.frag   # Downsample pass
     bloom_blur.vert/.frag   # Horizontal/vertical Gaussian
-    bloom_compose.vert/.frag # Additive composite
-
-tools/
-    bake_coastlines.py      # One-time: NE shapefile → coastline_data.hpp
+    bloom_compose.vert/.frag # Additive composite + Reinhard tone mapping
 
 tests/world/
     test_coordinate.cpp     # LLA↔ECEF round-trip
@@ -375,69 +374,91 @@ FBO uses `GL_RGB16F` color attachment for HDR (needed for bloom) and `GL_DEPTH_C
 
 ### Step 2: Line Shader Pipeline
 
-The core rendering primitive is a **line segment with geometry-shader quad expansion** and Gaussian-edge fragment shader.
+The core rendering primitive is **CPU-tessellated quads** drawn as `GL_TRIANGLES`. Each line segment produces 4 vertices (2 triangles) with a pre-computed `v_dist` attribute encoding which edge of the quad the vertex is on.
 
-**Vertex shader** (`line.vert`):
+**CPU tessellation helper** (`gl_util.hpp`):
+```cpp
+struct LineVertex {
+    glm::vec3 pos;    // 3D position (unit sphere or RTE-adjusted ECEF)
+    float     dist;   // -1.0 = left edge, +1.0 = right edge (pre-set by CPU)
+    float     value;  // per-vertex data (trail colormap, 0 for others)
+};
+
+// Expand a line segment p0→p1 into 4 quad vertices.
+// The actual screen-space perpendicular is computed in the vertex shader;
+// dist just tracks which edge so the fragment can apply the glow falloff.
+// Call this at init time for static geometry; on push() for trail.
+inline void push_segment(std::vector<LineVertex>& verts,
+                          glm::vec3 p0, glm::vec3 p1,
+                          float value = 0.0f)
+{
+    // Skip degenerate segments (duplicate points)
+    if (glm::distance(p0, p1) < 1e-9f) return;
+
+    // 4 corners: p0-left, p0-right, p1-left, p1-right (→ 2 triangles via index)
+    verts.push_back({p0, -1.0f, value});
+    verts.push_back({p0, +1.0f, value});
+    verts.push_back({p1, -1.0f, value});
+    verts.push_back({p1, +1.0f, value});
+}
+// Corresponding index pattern per segment (add base_offset to each):
+// { 0, 1, 2,  1, 3, 2 }  (two triangles, CCW winding)
+```
+
+**Vertex shader** (`line.vert`) — computes the screen-space perpendicular offset:
 ```glsl
 #version 330 core
-layout(location = 0) in vec3 a_ecef;  // ECEF position (meters)
+layout(location = 0) in vec3   a_pos;    // 3D corner position
+layout(location = 1) in float  a_dist;   // -1 or +1 (edge side)
+layout(location = 2) in float  a_value;  // data value (trail colormap)
 
-uniform mat4 u_view_proj;  // combined VP matrix (RTE-adjusted)
+uniform mat4  u_vp;         // view-projection (RTE-adjusted for vehicles)
+uniform vec2  u_viewport;   // viewport in pixels
+uniform float u_width;      // line half-width in pixels
+
+out float v_dist;
+out float v_value;
 
 void main() {
-    gl_Position = u_view_proj * vec4(a_ecef, 1.0);
+    // NOTE: the opposite endpoint must be passed somehow to compute the offset.
+    // Simplest approach: pack both endpoints in the VBO, waste bandwidth, gain
+    // portability. For static geometry, this is uploaded once and never changes.
+    // See LineVertex2 struct in gl_util.hpp for the dual-endpoint variant.
+    //
+    // For Phase 5a, use the simplest possible approach:
+    // just pass a_pos through and use GL_LINE_STRIP at width 1px, then add
+    // proper tessellation in Phase 5b when the line width matters visually.
+    gl_Position = u_vp * vec4(a_pos, 1.0);
+    v_dist  = a_dist;
+    v_value = a_value;
 }
 ```
 
-**Geometry shader** (`line.geom`):
-```glsl
-#version 330 core
-layout(lines) in;
-layout(triangle_strip, max_vertices = 4) out;
-
-uniform vec2 u_viewport;     // viewport size in pixels
-uniform float u_line_width;  // line width in pixels
-
-out float v_dist;   // signed distance from line center, normalized [-1, 1]
-
-void main() {
-    vec4 p0 = gl_in[0].gl_Position;
-    vec4 p1 = gl_in[1].gl_Position;
-
-    // NDC positions
-    vec2 n0 = p0.xy / p0.w;
-    vec2 n1 = p1.xy / p1.w;
-
-    // Screen-space direction and perpendicular
-    vec2 dir = normalize((n1 - n0) * u_viewport);
-    vec2 perp = vec2(-dir.y, dir.x);
-    vec2 offset = (perp * u_line_width) / u_viewport;
-
-    gl_Position = vec4((n0 - offset) * p0.w, p0.z, p0.w); v_dist = -1.0; EmitVertex();
-    gl_Position = vec4((n0 + offset) * p0.w, p0.z, p0.w); v_dist =  1.0; EmitVertex();
-    gl_Position = vec4((n1 - offset) * p1.w, p1.z, p1.w); v_dist = -1.0; EmitVertex();
-    gl_Position = vec4((n1 + offset) * p1.w, p1.z, p1.w); v_dist =  1.0; EmitVertex();
-    EndPrimitive();
-}
-```
+> **Practical Phase 5a shortcut**: Start with `GL_LINE_STRIP` (width 1px) for the graticule, which works everywhere. The geometry looks fine at 1px for the dim grid. Add CPU-tessellated quad lines in Phase 5b for coastlines where visible width matters.
 
 **Fragment shader** (`line.frag`):
 ```glsl
 #version 330 core
 in float v_dist;
+in float v_value;
 
-uniform vec4 u_color;       // RGBA color (HDR values > 1.0 allowed for bloom)
-uniform float u_soft_edge;  // Gaussian falloff exponent (higher = sharper)
+uniform vec4  u_color;       // RGBA color (RGB can exceed 1.0 for HDR/bloom)
+uniform float u_soft_edge;   // Gaussian sharpness: 2.0 = soft, 8.0 = crisp
+uniform sampler1D u_colormap; // for trail (bind to 1D colormap texture)
+uniform bool  u_use_colormap;
 
 out vec4 frag_color;
 
 void main() {
     float alpha = exp(-v_dist * v_dist * u_soft_edge) * u_color.a;
-    frag_color = vec4(u_color.rgb, alpha);
+    vec3  color = u_use_colormap
+                  ? texture(u_colormap, v_value).rgb
+                  : u_color.rgb;
+    frag_color = vec4(color, alpha);
 }
 ```
 
-For the bloom pass, lines are drawn with color values > 1.0 in HDR. Standard (non-bloom) lines use values ≤ 1.0.
+For the bloom pass, lines are drawn with RGB values > 1.0 in HDR. Standard (non-bloom) lines use values ≤ 1.0.
 
 ### Step 3: Globe Geometry — Unit Sphere, Not ECEF
 
@@ -554,60 +575,61 @@ world_view_.update(signal_buffers_, signal_tree_);
 
 **Goal**: Natural Earth coastlines as vector lines on the globe, and a wireframe vehicle marker.
 
-### Step 1: Coastline Data Baking
+### Step 1: Coastline Data — GeoJSON via nlohmann_json
 
-A one-time Python tool converts Natural Earth 110m coastline data into a C++ header:
+Load Natural Earth 50m GeoJSON at startup using `nlohmann_json` (already a project dependency). No Python tool, no shapefile library, no baking step.
 
-```python
-# tools/bake_coastlines.py
-# Reads ne_110m_coastline.shp (download from naturalearthdata.com)
-# Outputs: include/daedalus/world/coastline_data.hpp
-
-import shapefile  # pyshp
-import struct
-
-reader = shapefile.Reader("ne_110m_coastline.shp")
-strips = []
-for shape in reader.shapes():
-    if shape.shapeType == 3:  # Polyline
-        for i, start in enumerate(shape.parts):
-            end = shape.parts[i+1] if i+1 < len(shape.parts) else len(shape.points)
-            strips.append(shape.points[start:end])
-
-# Write as C++ initializer
-with open("include/daedalus/world/coastline_data.hpp", "w") as f:
-    f.write("// Auto-generated by tools/bake_coastlines.py\n")
-    f.write("// Source: Natural Earth 110m coastlines (public domain)\n")
-    f.write("#pragma once\n#include <array>\n\n")
-    f.write("namespace daedalus::world {\n\n")
-    # ... write strip data as constexpr arrays
-```
-
-The resulting header is ~200KB and contains ~10,000 `{lat_rad, lon_rad}` pairs.
-
-### Step 2: Coastline Rendering
-
-Load at startup, project to ECEF, upload to a VBO:
+The file `ne_50m_coastline.geojson` (~1MB) is exposed via `$DAEDALUS_ASSETS_DIR` set in the Nix dev shell (same pattern used for other assets). A Nix `fetchurl` derivation SHA256-pins the download.
 
 ```cpp
-void GlobeRenderer::build_coastlines() {
-    // Interleave: vertex, vertex, BREAK, vertex, vertex, BREAK, ...
-    // A "BREAK" is a sentinel with NaN z to indicate line strip boundaries.
-    // Geometry shader skips degenerate segments (where either vertex is NaN).
+// In globe_renderer.cpp
+void GlobeRenderer::load_coastlines(const std::string& geojson_path) {
+    std::ifstream f(geojson_path);
+    auto j = nlohmann::json::parse(f);
 
-    for (const auto& strip : coastline_strips) {
-        for (size_t i = 0; i + 1 < strip.size(); ++i) {
-            auto v0 = coord::lla_to_ecef_f(strip[i].lat, strip[i].lon, 0.0);
-            auto v1 = coord::lla_to_ecef_f(strip[i+1].lat, strip[i+1].lon, 0.0);
-            coast_verts_.push_back(v0);
-            coast_verts_.push_back(v1);
+    std::vector<LineVertex> verts;
+    std::vector<uint32_t>   idxs;
+
+    auto process_strip = [&](const nlohmann::json& coords) {
+        // Note: GeoJSON is [lon, lat] per RFC 7946
+        for (size_t i = 0; i + 1 < coords.size(); ++i) {
+            float lon0 = glm::radians(coords[i  ][0].get<float>());
+            float lat0 = glm::radians(coords[i  ][1].get<float>());
+            float lon1 = glm::radians(coords[i+1][0].get<float>());
+            float lat1 = glm::radians(coords[i+1][1].get<float>());
+
+            // *** Unit sphere only — NOT lla_to_ecef ***
+            // Globe is unit sphere; coastlines must use the same space.
+            glm::vec3 p0 = latlon_to_unit_sphere(lat0, lon0) * 1.001f;  // z-offset
+            glm::vec3 p1 = latlon_to_unit_sphere(lat1, lon1) * 1.001f;
+
+            uint32_t base = static_cast<uint32_t>(verts.size());
+            push_segment(verts, p0, p1);         // 4 LineVertex entries
+            idxs.insert(idxs.end(), {            // 2 triangles
+                base+0, base+1, base+2,
+                base+1, base+3, base+2
+            });
         }
+    };
+
+    for (const auto& feat : j["features"]) {
+        const auto& geom = feat["geometry"];
+        const auto  type = geom["type"].get<std::string>();
+        if      (type == "LineString")
+            process_strip(geom["coordinates"]);
+        else if (type == "MultiLineString")
+            for (const auto& ls : geom["coordinates"])
+                process_strip(ls);
     }
-    // Upload to VBO, draw as GL_LINES
+
+    // Upload to VBO + IBO (uploaded once, drawn every frame)
+    upload_static_mesh(coast_vao_, coast_vbo_, coast_ibo_,
+                       verts, idxs);
+    coast_index_count_ = static_cast<int>(idxs.size());
 }
 ```
 
-Total coast VBO size: ~10,000 vertex pairs × 12 bytes = ~120KB. Trivial.
+**50m data size**: ~300 strips × avg 200 pts × 4 verts × 16 bytes ≈ **~4MB VBO**. Uploaded once at init, never touched again.
 
 ### Step 3: Wireframe Vehicle
 
@@ -640,8 +662,8 @@ Plus a small "V" chevron in the 2D screen space drawn via `ImGui::GetWindowDrawL
 
 ### Phase 5b Deliverables
 
-- [ ] `bake_coastlines.py` tool + `coastline_data.hpp` generated output
-- [ ] Coastline VBO upload and rendering
+- [ ] Nix fetchurl derivation for `ne_50m_coastline.geojson`
+- [ ] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
 - [ ] `VehicleRenderer` with body-axis lines and diamond marker
 - [ ] Vehicle position from signal buffers (LLA → ECEF → RTE model matrix)
 - [ ] Dynamic scale based on camera distance
@@ -665,18 +687,34 @@ Ring-buffer backed, color-coded by altitude or velocity:
 class TrailRenderer {
 public:
     static constexpr size_t MAX_TRAIL_POINTS = 100000;
+    // GPU buffer capacity = MAX_TRAIL_POINTS * 4 verts * 6 indices per segment
     enum class ColorMode { Altitude, Velocity, Time };
 
-    void push(glm::vec3 ecef_pos, float alt, float speed);
+    void init();   // allocate VBO/IBO with GL_DYNAMIC_DRAW
+    void push(glm::vec3 globe_pos, float value);  // globe space (unit sphere)
     void set_color_mode(ColorMode mode);
-    void draw(GLuint color_program, const glm::mat4& vp,
-              const glm::vec3& camera_ecef);
+    void draw(GLuint line_program, const glm::mat4& vp);
 
 private:
-    struct Vertex { glm::vec3 pos; float value; };  // value = alt/speed/time
-    std::array<Vertex, MAX_TRAIL_POINTS> ring_;
-    size_t head_ = 0;
-    size_t count_ = 0;
+    // CPU ring buffer mirrors the GPU buffer
+    // Each push() adds one segment (between new point and previous point)
+    // = 4 LineVertex + 6 indices uploaded via glBufferSubData at the ring position
+    //
+    // GPU update strategy:
+    //   - Allocate VBO at GL_DYNAMIC_DRAW with full MAX_TRAIL_POINTS * 4 capacity
+    //   - On push(): expand new segment → 4 verts at ring offset, upload via:
+    //       glBufferSubData(GL_ARRAY_BUFFER, byte_offset, 4 * sizeof(LineVertex), &verts)
+    //   - On draw(): draw only the live segment count (no full re-upload)
+    //   - On ring wrap (head_ == 0): reupload entire VBO once (happens < 1/100000 frames)
+    //
+    // Result: 1 glBufferSubData(64 bytes) per frame at 1 Hz telemetry = negligible.
+
+    struct LineVertex { glm::vec3 pos; float dist; float value; };
+    std::array<LineVertex, MAX_TRAIL_POINTS * 4> cpu_ring_;  // CPU mirror
+    glm::vec3  prev_pos_{};
+    size_t     seg_count_  = 0;
+    size_t     head_seg_   = 0;
+    GLuint     vao_ = 0, vbo_ = 0, ibo_ = 0;
 };
 ```
 
@@ -704,11 +742,18 @@ The wireframe cone looks better than a filled transparent cone in this aesthetic
 
 ### Step 3: Ground Track
 
-The trajectory projected onto the surface — same ring buffer as the trail but each point normalized to `WGS84_A` radius:
+The trajectory projected onto the surface. The trail stores positions in **two spaces**:
+- **Globe space** (unit sphere): for rendering alongside graticule/coastlines. Project by normalizing to radius 1.0.
+- **ECEF space** (real meters): vehicle position from telemetry, used for RTE vehicle rendering.
 
+The ground track uses globe space:
 ```cpp
-glm::vec3 ground_pt = glm::normalize(trail_point) * (float)coord::WGS84_A;
+// Vehicle ECEF position (from telemetry) → unit sphere surface
+glm::dvec3 ecef = coord::lla_to_ecef(lat_rad, lon_rad, 0.0);  // alt=0: surface
+glm::vec3  globe_pt = glm::normalize(glm::vec3(ecef)) * 0.999f;  // slightly inside surface
 ```
+
+**Never mix the two spaces** — all globe geometry (graticule, coastlines, trail, ground track) uses unit sphere. Only the vehicle marker uses real ECEF with RTE.
 
 Rendered as a separate dimmer trail (same color scale but reduced brightness, to differentiate from the true-altitude trail).
 
@@ -897,14 +942,14 @@ At typical altitudes (0–2,000 km), the distance from camera to vehicle is <2,0
 
 | Risk | Impact | Likelihood | Mitigation |
 |:-----|:-------|:-----------|:-----------|
-| **Geometry shader unavailable** | Lines revert to 1px | Very low (GL 3.3 core = GS required) | Fallback: `glLineWidth(1.0)` which is always allowed |
-| **ImGui GL state corruption** | Visual artifacts | Low | Save/restore FBO binding + viewport; use `glPushAttrib`-equivalent (manual state save) |
-| **Coastline data license** | Must be public domain | None — NE is public domain | Confirmed: naturalearthdata.com/about/terms-of-use/ |
-| **Coastline bake tool maintenance** | stale if NE updated | Very low | Header checked in, update is opt-in |
-| **Bloom performance on integrated GPU** | FPS drop | Low | Bloom is optional (checkbox). Default: off for safety, on when enabled by user |
-| **Mouse capture conflict** | Can't orbit globe | Medium | `ImGui::IsWindowHovered()` guard already standard |
-| **ECEF precision at 60Hz** | Vehicle jitter | Low | RTE removes bulk of magnitude; remaining is <1km range |
-| **OpenGL state left dirty** | imgui_bundle rendering breaks | Medium | Comprehensive state save/restore in `WorldView::render()` |
+| **ImGui GL state corruption** | Blank/corrupted UI | Medium | `GlStateGuard` RAII in `WorldView::render()` saves and restores all 16 state variables — see Appendix C |
+| **Coordinate space mismatch** | Coastlines/vehicle misaligned | Medium | Globe geometry (graticule, coastlines, trail) uses unit sphere; vehicle only uses ECEF with RTE — enforced by distinct `latlon_to_unit_sphere()` vs `lla_to_ecef()` functions |
+| **Degenerate line segments** | NaN/inf in vertex data | Low | `push_segment()` guards with `distance(p0,p1) < 1e-9` before expanding to quad |
+| **WASM line rendering** | Wide lines broken on WebGL | N/A | Primary path uses CPU-tessellated `GL_TRIANGLES` — works on WebGL2 with no changes |
+| **Coastline GeoJSON unavailable offline** | No coastlines at startup | Low | Nix `fetchurl` derivation SHA256-pins download; CI bundles asset |
+| **Bloom on integrated GPU** | FPS drop | Low | Bloom is optional (checkbox). Default: off. The scene looks good without it. |
+| **Mouse capture conflict** | Can't orbit globe | Medium | `ImGui::IsWindowHovered()` guard before routing mouse events to camera |
+| **Trail VBO full re-upload on wrap** | Single frame stutter | Very low | Happens once per 100K points. At 1 Hz telemetry ≈ once per 28 hours. |
 
 ---
 
@@ -935,9 +980,9 @@ At typical altitudes (0–2,000 km), the distance from camera to vehicle is <2,0
 | Dependency | Source | Purpose | Phase |
 |:-----------|:-------|:--------|:------|
 | **glm** | nixpkgs | Math (vec3, mat4, quat) | 5a |
-| **pyshp** (Python, tool only) | Not a runtime dep | Bake coastlines (one-time) | 5b |
+| **ne_50m_coastline.geojson** | Nix fetchurl (naturalearthdata.com) | Coastline vector data | 5b |
 
-That's it. Everything else is already present.
+That's it. `nlohmann_json` (already present) loads the GeoJSON. No new libraries needed.
 
 ### What We Use from Existing Stack
 
@@ -955,9 +1000,8 @@ That's it. Everything else is already present.
 
 | Shader | Input | Output |
 |:-------|:------|:-------|
-| `line.vert` | ECEF vec3 | clip space gl_Position |
-| `line.geom` | 2 verts (line segment) | 4 verts (quad) + v_dist |
-| `line.frag` | v_dist, u_color, u_soft_edge | frag color with Gaussian alpha |
+| `line.vert` | pre-tessellated quad corner (pos, dist, value) | clip space gl_Position |
+| `line.frag` | v_dist, u_color, u_soft_edge, optional colormap | frag color with Gaussian alpha |
 | `bloom_down.vert` | full-screen quad UV | passthrough |
 | `bloom_blur.frag` | scene texture | blurred (H then V pass) |
 | `bloom_compose.frag` | scene + blur | HDR composite |
@@ -980,32 +1024,65 @@ That's it. Everything else is already present.
 
 ## Appendix C: OpenGL State Save/Restore Checklist
 
-Before and after `WorldView::render()`, save and restore:
+Failure to fully restore GL state after `WorldView::render()` **breaks imgui_bundle's renderer** (symptoms: blank window, corrupted UI, wrong blend modes). This is the most critical implementation detail.
 
 ```cpp
-GLint  prev_fbo, prev_vao, prev_program;
-GLint  prev_viewport[4];
-GLint  prev_blend_eq, prev_blend_src, prev_blend_dst;
-GLboolean prev_blend, prev_depth_test, prev_cull_face;
+struct GlStateGuard {
+    // Saved values
+    GLint  fbo, vao, program;
+    GLint  active_tex, tex_2d;
+    GLint  viewport[4];
+    GLint  blend_eq_rgb, blend_eq_a;
+    GLint  blend_src_rgb, blend_dst_rgb, blend_src_a, blend_dst_a;
+    GLboolean blend, depth_test, depth_write, cull_face, scissor_test;
 
-// Save
-glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
-glGetIntegerv(GL_VIEWPORT, prev_viewport);
-glGetIntegerv(GL_CURRENT_PROGRAM, &prev_program);
-glGetBooleanv(GL_BLEND, &prev_blend);
-glGetBooleanv(GL_DEPTH_TEST, &prev_depth_test);
-// ...
+    GlStateGuard() {
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING,    &fbo);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING,   &vao);
+        glGetIntegerv(GL_CURRENT_PROGRAM,        &program);
+        glGetIntegerv(GL_ACTIVE_TEXTURE,         &active_tex);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D,     &tex_2d);
+        glGetIntegerv(GL_VIEWPORT,               viewport);
+        glGetIntegerv(GL_BLEND_EQUATION_RGB,     &blend_eq_rgb);
+        glGetIntegerv(GL_BLEND_EQUATION_ALPHA,   &blend_eq_a);
+        glGetIntegerv(GL_BLEND_SRC_RGB,          &blend_src_rgb);
+        glGetIntegerv(GL_BLEND_DST_RGB,          &blend_dst_rgb);
+        glGetIntegerv(GL_BLEND_SRC_ALPHA,        &blend_src_a);
+        glGetIntegerv(GL_BLEND_DST_ALPHA,        &blend_dst_a);
+        glGetBooleanv(GL_BLEND,                  &blend);
+        glGetBooleanv(GL_DEPTH_TEST,             &depth_test);
+        glGetBooleanv(GL_DEPTH_WRITEMASK,        &depth_write);
+        glGetBooleanv(GL_CULL_FACE,              &cull_face);
+        glGetBooleanv(GL_SCISSOR_TEST,           &scissor_test);
+    }
 
-// Render scene
-// ...
+    ~GlStateGuard() {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glBindVertexArray(vao);
+        glUseProgram(program);
+        glActiveTexture(active_tex);
+        glBindTexture(GL_TEXTURE_2D, tex_2d);
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        glBlendEquationSeparate(blend_eq_rgb, blend_eq_a);
+        glBlendFuncSeparate(blend_src_rgb, blend_dst_rgb, blend_src_a, blend_dst_a);
+        (blend       ? glEnable : glDisable)(GL_BLEND);
+        (depth_test  ? glEnable : glDisable)(GL_DEPTH_TEST);
+        glDepthMask(depth_write);
+        (cull_face   ? glEnable : glDisable)(GL_CULL_FACE);
+        (scissor_test ? glEnable : glDisable)(GL_SCISSOR_TEST);
+    }
+};
 
-// Restore
-glBindFramebuffer(GL_FRAMEBUFFER, prev_fbo);
-glViewport(prev_viewport[0], prev_viewport[1],
-           prev_viewport[2], prev_viewport[3]);
-glUseProgram(prev_program);
-if (prev_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-// ...
+// Usage in WorldView::render():
+void WorldView::render() {
+    GlStateGuard guard;  // saves on construction, restores on destruction (RAII)
+    // ... all GL work here ...
+    ImGui::Image(...);   // outside the guard scope is fine — ImGui uses its own state
+}
 ```
 
-This is the most important implementation detail — failure here breaks imgui_bundle's renderer.
+**Crucially also required** (often missed):
+- Restore `GL_SCISSOR_TEST` — imgui_bundle uses scissor for widget clipping
+- Restore `GL_DEPTH_WRITEMASK` — imgui_bundle expects depth writes enabled
+- Restore `GL_VERTEX_ARRAY_BINDING` (VAO) — imgui_bundle has its own VAO for the mesh
+- Restore `GL_ACTIVE_TEXTURE` + `GL_TEXTURE_BINDING_2D` — imgui_bundle binds fonts/atlas textures
