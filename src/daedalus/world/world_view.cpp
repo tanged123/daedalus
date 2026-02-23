@@ -274,7 +274,7 @@ glm::mat4 WorldView::make_vehicle_model(const VehiclePose &pose) const {
     model[3] = glm::dvec4(pose.position_ecef_m / kEarthRadiusM, 1.0);
 
     const double distance = std::max(1.0, static_cast<double>(camera_.distance_earth_radii));
-    const double scale = std::clamp(0.00135 * std::sqrt(distance), 0.0010, 0.015);
+    const double scale = std::clamp(0.012 * distance, 0.012, 0.08);
     model = model * glm::scale(glm::dmat4(1.0), glm::dvec3(scale));
     return glm::mat4(model);
 }

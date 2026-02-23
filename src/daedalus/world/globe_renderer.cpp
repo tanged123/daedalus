@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <fstream>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -283,22 +284,127 @@ void GlobeRenderer::load_coastlines(const std::filesystem::path &geojson_path) {
     coastlines_loaded_ = false;
     coastline_segment_count_ = 0;
 
-    if (geojson_path.empty() || !std::filesystem::exists(geojson_path)) {
-        return;
-    }
+    auto build_fallback = [&]() {
+        CoastlineGeometry fallback;
+        auto append_polyline = [&fallback](std::initializer_list<glm::vec2> lon_lat_deg) {
+            if (lon_lat_deg.size() < 2) {
+                return;
+            }
 
-    try {
-        const std::string payload = gl::read_text_file(geojson_path);
-        const CoastlineGeometry coast = parse_coastline_geojson(payload);
+            auto it = lon_lat_deg.begin();
+            glm::vec2 prev = *it;
+            ++it;
+            for (; it != lon_lat_deg.end(); ++it) {
+                const glm::vec2 cur = *it;
+                const float prev_lon = glm::radians(prev.x);
+                const float prev_lat = glm::radians(prev.y);
+                const float cur_lon = glm::radians(cur.x);
+                const float cur_lat = glm::radians(cur.y);
+
+                fallback.vertices.push_back(
+                    LineVertex{latlon_to_unit_sphere(prev_lat, prev_lon) * kCoastlineRadius, 0.0f});
+                fallback.vertices.push_back(
+                    LineVertex{latlon_to_unit_sphere(cur_lat, cur_lon) * kCoastlineRadius, 0.0f});
+                ++fallback.segment_count;
+                prev = cur;
+            }
+        };
+
+        append_polyline({
+            {-168.0f, 72.0f},
+            {-140.0f, 70.0f},
+            {-125.0f, 50.0f},
+            {-117.0f, 32.0f},
+            {-97.0f, 24.0f},
+            {-82.0f, 25.0f},
+            {-60.0f, 45.0f},
+            {-75.0f, 60.0f},
+            {-120.0f, 73.0f},
+            {-168.0f, 72.0f},
+        });
+        append_polyline({
+            {-81.0f, 12.0f},
+            {-70.0f, -5.0f},
+            {-75.0f, -20.0f},
+            {-70.0f, -40.0f},
+            {-54.0f, -55.0f},
+            {-35.0f, -40.0f},
+            {-45.0f, -10.0f},
+            {-60.0f, 5.0f},
+            {-81.0f, 12.0f},
+        });
+        append_polyline({
+            {-10.0f, 35.0f}, {0.0f, 60.0f},   {40.0f, 70.0f},  {100.0f, 72.0f}, {140.0f, 55.0f},
+            {130.0f, 40.0f}, {120.0f, 20.0f}, {110.0f, 5.0f},  {100.0f, 0.0f},  {80.0f, 8.0f},
+            {50.0f, 25.0f},  {35.0f, 32.0f},  {20.0f, 35.0f},  {10.0f, 20.0f},  {20.0f, 5.0f},
+            {30.0f, -10.0f}, {20.0f, -35.0f}, {10.0f, -35.0f}, {-5.0f, 0.0f},   {-10.0f, 20.0f},
+            {-10.0f, 35.0f},
+        });
+        append_polyline({
+            {112.0f, -10.0f},
+            {154.0f, -10.0f},
+            {155.0f, -38.0f},
+            {130.0f, -44.0f},
+            {113.0f, -25.0f},
+            {112.0f, -10.0f},
+        });
+        append_polyline({
+            {-52.0f, 60.0f},
+            {-40.0f, 75.0f},
+            {-20.0f, 80.0f},
+            {-25.0f, 60.0f},
+            {-52.0f, 60.0f},
+        });
+
+        std::vector<glm::vec2> antarctica;
+        antarctica.reserve(19);
+        for (int lon = -180; lon <= 180; lon += 20) {
+            const float lat = -72.0f + 3.5f * std::sin(glm::radians(static_cast<float>(lon * 2)));
+            antarctica.push_back(glm::vec2(static_cast<float>(lon), lat));
+        }
+        for (size_t i = 0; i + 1 < antarctica.size(); ++i) {
+            const glm::vec2 prev = antarctica[i];
+            const glm::vec2 cur = antarctica[i + 1];
+            const float prev_lon = glm::radians(prev.x);
+            const float prev_lat = glm::radians(prev.y);
+            const float cur_lon = glm::radians(cur.x);
+            const float cur_lat = glm::radians(cur.y);
+
+            fallback.vertices.push_back(
+                LineVertex{latlon_to_unit_sphere(prev_lat, prev_lon) * kCoastlineRadius, 0.0f});
+            fallback.vertices.push_back(
+                LineVertex{latlon_to_unit_sphere(cur_lat, cur_lon) * kCoastlineRadius, 0.0f});
+            ++fallback.segment_count;
+        }
+
+        return fallback;
+    };
+
+    auto upload = [this](const CoastlineGeometry &coast) {
         upload_layer(coastline_layer_, coast.vertices);
         coastline_segment_count_ = coast.segment_count;
         coastlines_loaded_ = coastline_layer_.vertex_count > 0;
-    } catch (const std::exception &e) {
-        std::fprintf(stderr, "[Daedalus] Coastline load failed (%s): %s\n",
-                     geojson_path.string().c_str(), e.what());
-        destroy_layer(coastline_layer_);
-        coastlines_loaded_ = false;
-        coastline_segment_count_ = 0;
+    };
+
+    if (!geojson_path.empty() && std::filesystem::exists(geojson_path)) {
+        try {
+            const std::string payload = gl::read_text_file(geojson_path);
+            const CoastlineGeometry coast = parse_coastline_geojson(payload);
+            if (!coast.vertices.empty()) {
+                upload(coast);
+                return;
+            }
+        } catch (const std::exception &e) {
+            std::fprintf(stderr, "[Daedalus] Coastline load failed (%s): %s\n",
+                         geojson_path.string().c_str(), e.what());
+        }
+    }
+
+    const CoastlineGeometry fallback = build_fallback();
+    upload(fallback);
+    if (coastlines_loaded_) {
+        std::fprintf(stderr,
+                     "[Daedalus] Coastline GeoJSON unavailable; using built-in coarse fallback\n");
     }
 }
 
