@@ -29,6 +29,8 @@ void VehicleRenderer::init(const std::filesystem::path &shader_dir) {
     model_uniform_ = glGetUniformLocation(program_, "u_model");
     color_uniform_ = glGetUniformLocation(program_, "u_color");
     soft_edge_uniform_ = glGetUniformLocation(program_, "u_soft_edge");
+    camera_pos_uniform_ = glGetUniformLocation(program_, "u_camera_pos");
+    clip_backside_uniform_ = glGetUniformLocation(program_, "u_clip_backside");
 
     upload_geometry();
     initialized_ = true;
@@ -52,6 +54,8 @@ void VehicleRenderer::shutdown() {
     model_uniform_ = -1;
     color_uniform_ = -1;
     soft_edge_uniform_ = -1;
+    camera_pos_uniform_ = -1;
+    clip_backside_uniform_ = -1;
     x_axis_first_ = 0;
     y_axis_first_ = 0;
     z_axis_first_ = 0;
@@ -68,6 +72,8 @@ void VehicleRenderer::draw(const glm::mat4 &vp, const glm::mat4 &model, bool vis
     glUseProgram(program_);
     glUniformMatrix4fv(vp_uniform_, 1, GL_FALSE, glm::value_ptr(vp));
     glUniformMatrix4fv(model_uniform_, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform3f(camera_pos_uniform_, 0.0f, 0.0f, 0.0f);
+    glUniform1i(clip_backside_uniform_, 0);
 
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);

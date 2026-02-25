@@ -41,6 +41,8 @@ class VehicleRenderer {
     GLint model_uniform_ = -1;
     GLint color_uniform_ = -1;
     GLint soft_edge_uniform_ = -1;
+    GLint camera_pos_uniform_ = -1;
+    GLint clip_backside_uniform_ = -1;
 
     GLsizei x_axis_first_ = 0;
     GLsizei y_axis_first_ = 0;

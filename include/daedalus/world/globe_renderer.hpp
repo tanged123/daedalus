@@ -49,7 +49,7 @@ class GlobeRenderer {
 
     void init(const std::filesystem::path &shader_dir);
     void shutdown();
-    void draw(const glm::mat4 &vp) const;
+    void draw(const glm::mat4 &vp, const glm::vec3 &camera_position_world) const;
 
     [[nodiscard]] bool is_initialized() const { return initialized_; }
     [[nodiscard]] const GraticuleGeometry &geometry() const { return geometry_; }
@@ -82,6 +82,8 @@ class GlobeRenderer {
     GLint model_uniform_ = -1;
     GLint color_uniform_ = -1;
     GLint soft_edge_uniform_ = -1;
+    GLint camera_pos_uniform_ = -1;
+    GLint clip_backside_uniform_ = -1;
 
     GraticuleGeometry geometry_;
     Layer dim_layer_;

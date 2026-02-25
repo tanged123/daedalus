@@ -144,6 +144,8 @@ void GlobeRenderer::init(const std::filesystem::path &shader_dir) {
     model_uniform_ = glGetUniformLocation(line_program_, "u_model");
     color_uniform_ = glGetUniformLocation(line_program_, "u_color");
     soft_edge_uniform_ = glGetUniformLocation(line_program_, "u_soft_edge");
+    camera_pos_uniform_ = glGetUniformLocation(line_program_, "u_camera_pos");
+    clip_backside_uniform_ = glGetUniformLocation(line_program_, "u_clip_backside");
 
     geometry_ = build_graticule(15);
     upload_layer(dim_layer_, geometry_.dim_vertices);
@@ -169,12 +171,14 @@ void GlobeRenderer::shutdown() {
     model_uniform_ = -1;
     color_uniform_ = -1;
     soft_edge_uniform_ = -1;
+    camera_pos_uniform_ = -1;
+    clip_backside_uniform_ = -1;
     coastlines_loaded_ = false;
     coastline_segment_count_ = 0;
     initialized_ = false;
 }
 
-void GlobeRenderer::draw(const glm::mat4 &vp) const {
+void GlobeRenderer::draw(const glm::mat4 &vp, const glm::vec3 &camera_position_world) const {
     if (!initialized_) {
         return;
     }
@@ -183,6 +187,9 @@ void GlobeRenderer::draw(const glm::mat4 &vp) const {
     glUniformMatrix4fv(vp_uniform_, 1, GL_FALSE, glm::value_ptr(vp));
     const glm::mat4 identity(1.0f);
     glUniformMatrix4fv(model_uniform_, 1, GL_FALSE, glm::value_ptr(identity));
+    glUniform3f(camera_pos_uniform_, camera_position_world.x, camera_position_world.y,
+                camera_position_world.z);
+    glUniform1i(clip_backside_uniform_, 1);
 
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);

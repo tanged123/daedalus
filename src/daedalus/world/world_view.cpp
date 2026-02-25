@@ -4,6 +4,7 @@
 #include <imgui.h>
 
 #include <glm/ext/scalar_constants.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -271,9 +272,12 @@ void WorldView::render() {
         follow_vehicle ? glm::normalize(vehicle_position_unit_) : glm::vec3(0.0f, 0.0f, 1.0f);
     const float near_plane = follow_vehicle ? 0.000002f : 0.01f;
     const float far_plane = follow_vehicle ? 12.0f : 100.0f;
-    const glm::mat4 vp =
-        camera_.proj_matrix(aspect, near_plane, far_plane) * camera_.view_matrix(target, up_hint);
-    globe_.draw(vp);
+    const glm::mat4 view = camera_.view_matrix(target, up_hint);
+    const glm::mat4 proj = camera_.proj_matrix(aspect, near_plane, far_plane);
+    const glm::mat4 vp = proj * view;
+    const glm::mat4 inv_view = glm::inverse(view);
+    const glm::vec3 camera_position_world = glm::vec3(inv_view[3]);
+    globe_.draw(vp, camera_position_world);
     vehicle_.draw(vp, vehicle_model_, vehicle_visible_);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
