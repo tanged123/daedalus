@@ -547,8 +547,11 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                         ImGuiTreeNodeFlags_SpanAvailWidth;
         ImGui::TreeNodeEx(node.name.c_str(), leaf_flags);
+        const bool leaf_item_hovered = ImGui::IsItemHovered();
+        const bool is_writable =
+            writable_signal_paths_.find(node.full_path) != writable_signal_paths_.end();
 
-        // Drag source + double-click quick-add for plotting.
+        // Drag source + double-click quick-add for plotting on non-writable signals.
         if (node.signal_index.has_value()) {
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
                 views::DragDropSignalPayload payload{};
@@ -558,8 +561,12 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
                 ImGui::TextUnformatted(node.full_path.c_str());
                 ImGui::EndDragDropSource();
             }
+        }
 
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        if (leaf_item_hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            if (is_writable) {
+                ImGui::OpenPopup("set_writable_signal");
+            } else if (node.signal_index.has_value()) {
                 plot_manager_.add_signal_to_active_or_new_panel(node.signal_index.value(),
                                                                 node.full_path);
             }
@@ -574,8 +581,7 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
             }
         }
 
-        if (writable_signal_paths_.find(node.full_path) != writable_signal_paths_.end() &&
-            ImGui::BeginPopupContextItem("set_writable_signal")) {
+        if (is_writable && ImGui::BeginPopup("set_writable_signal")) {
             double initial_value = 0.0;
             if (node.signal_index.has_value()) {
                 const auto buffer_it = signal_buffers_.find(node.signal_index.value());
@@ -607,9 +613,8 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
             }
             ImGui::EndPopup();
         }
-        if (writable_signal_paths_.find(node.full_path) != writable_signal_paths_.end() &&
-            ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Writable signal. Right-click to set value.");
+        if (is_writable && leaf_item_hovered) {
+            ImGui::SetTooltip("Writable signal. Double-click to set value.");
         }
     } else {
         // Internal node: expandable tree
