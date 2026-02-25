@@ -60,10 +60,12 @@ detect_display_platform() {
     fi
 
     if [ -z "${GLFW_PLATFORM:-}" ]; then
-        if [ "$wayland_ok" -eq 1 ]; then
-            export GLFW_PLATFORM=wayland
-        elif [ "$x11_ok" -eq 1 ]; then
+        # Prefer X11 when both are available: window placement/maximize behavior
+        # is currently more predictable there across multi-monitor setups.
+        if [ "$x11_ok" -eq 1 ]; then
             export GLFW_PLATFORM=x11
+        elif [ "$wayland_ok" -eq 1 ]; then
+            export GLFW_PLATFORM=wayland
         fi
     fi
 

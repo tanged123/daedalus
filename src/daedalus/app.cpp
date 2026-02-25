@@ -136,6 +136,13 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
     HelloImGui::RunnerParams runner_params;
     runner_params.appWindowParams.windowTitle = "Daedalus";
     runner_params.appWindowParams.windowGeometry.size = {1280, 720};
+    // Keep startup geometry deterministic on multi-monitor setups.
+    runner_params.appWindowParams.windowGeometry.positionMode =
+        HelloImGui::WindowPositionMode::MonitorCenter;
+    runner_params.appWindowParams.windowGeometry.monitorIdx = 0;
+    // Use raw screen coordinates to avoid oversized windows on mixed-DPI desktops.
+    runner_params.appWindowParams.windowGeometry.windowSizeMeasureMode =
+        HelloImGui::WindowSizeMeasureMode::ScreenCoords;
 
     // Enable docking
     runner_params.imGuiWindowParams.defaultImGuiWindowType =
