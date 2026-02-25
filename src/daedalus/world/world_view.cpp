@@ -21,6 +21,10 @@ namespace daedalus::world {
 namespace {
 
 constexpr double kEarthRadiusM = 6378137.0;
+constexpr float kOrbitMinDistanceER = 1.05f;
+constexpr float kOrbitMaxDistanceER = 30.0f;
+constexpr float kFollowMinDistanceER = 0.00002f; // ~128 m
+constexpr float kFollowMaxDistanceER = 1.2f;     // ~7,650 km
 
 [[nodiscard]] std::string to_lower_ascii(std::string_view value) {
     std::string lowered(value);
@@ -204,6 +208,13 @@ void WorldView::render() {
         return;
     }
 
+    const bool follow_vehicle = follow_vehicle_camera_ && vehicle_visible_;
+    if (follow_vehicle) {
+        camera_.set_distance_limits(kFollowMinDistanceER, kFollowMaxDistanceER);
+    } else {
+        camera_.set_distance_limits(kOrbitMinDistanceER, kOrbitMaxDistanceER);
+    }
+
     handle_input();
 
     const int width = static_cast<int>(image_size.x);
@@ -223,11 +234,13 @@ void WorldView::render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     const float aspect = image_size.x / image_size.y;
-    const bool follow_vehicle = follow_vehicle_camera_ && vehicle_visible_;
     const glm::vec3 target = follow_vehicle ? vehicle_position_unit_ : glm::vec3(0.0f);
     const glm::vec3 up_hint =
         follow_vehicle ? glm::normalize(vehicle_position_unit_) : glm::vec3(0.0f, 0.0f, 1.0f);
-    const glm::mat4 vp = camera_.proj_matrix(aspect) * camera_.view_matrix(target, up_hint);
+    const float near_plane = follow_vehicle ? 0.000002f : 0.01f;
+    const float far_plane = follow_vehicle ? 12.0f : 100.0f;
+    const glm::mat4 vp =
+        camera_.proj_matrix(aspect, near_plane, far_plane) * camera_.view_matrix(target, up_hint);
     globe_.draw(vp);
     vehicle_.draw(vp, vehicle_model_, vehicle_visible_);
 

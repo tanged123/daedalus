@@ -16,7 +16,13 @@ void CameraController::handle_drag(float dx, float dy) {
 void CameraController::handle_scroll(float delta) {
     const float scale = 1.0f - (delta * kScrollZoomFactor);
     distance_earth_radii *= std::max(0.1f, scale);
-    distance_earth_radii = std::clamp(distance_earth_radii, kMinDistance, kMaxDistance);
+    distance_earth_radii = std::clamp(distance_earth_radii, min_distance_, max_distance_);
+}
+
+void CameraController::set_distance_limits(float min_distance, float max_distance) {
+    min_distance_ = std::max(1e-7f, std::min(min_distance, max_distance));
+    max_distance_ = std::max(min_distance_, max_distance);
+    distance_earth_radii = std::clamp(distance_earth_radii, min_distance_, max_distance_);
 }
 
 glm::mat4 CameraController::view_matrix() const {
@@ -43,8 +49,14 @@ glm::mat4 CameraController::view_matrix(const glm::vec3 &target, const glm::vec3
 }
 
 glm::mat4 CameraController::proj_matrix(float aspect) const {
+    return proj_matrix(aspect, 0.01f, 100.0f);
+}
+
+glm::mat4 CameraController::proj_matrix(float aspect, float near_plane, float far_plane) const {
     const float safe_aspect = std::max(0.1f, aspect);
-    return glm::perspective(glm::radians(fov_deg), safe_aspect, 0.01f, 100.0f);
+    const float safe_near = std::max(1e-7f, near_plane);
+    const float safe_far = std::max(safe_near * 1.1f, far_plane);
+    return glm::perspective(glm::radians(fov_deg), safe_aspect, safe_near, safe_far);
 }
 
 glm::dvec3 CameraController::ecef_position() const {
