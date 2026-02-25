@@ -67,6 +67,7 @@ TEST(SchemaParser, MultipleModules) {
     ASSERT_EQ(inputs->signals.size(), 1u);
     EXPECT_EQ(inputs->signals[0].name, "throttle");
     EXPECT_FALSE(inputs->signals[0].unit.has_value());
+    EXPECT_FALSE(inputs->signals[0].writable);
 }
 
 TEST(SchemaParser, SignalWithoutUnit) {
@@ -84,6 +85,25 @@ TEST(SchemaParser, SignalWithoutUnit) {
     auto schema = parse_schema(msg);
     ASSERT_EQ(schema.modules[0].signals.size(), 1u);
     EXPECT_FALSE(schema.modules[0].signals[0].unit.has_value());
+    EXPECT_FALSE(schema.modules[0].signals[0].writable);
+}
+
+TEST(SchemaParser, ParsesWritableSignalFlag) {
+    auto msg = nlohmann::json::parse(R"({
+        "type": "schema",
+        "modules": {
+            "inputs": {
+                "signals": [
+                    {"name": "throttle", "type": "f64", "writable": true}
+                ]
+            }
+        }
+    })");
+
+    const auto schema = parse_schema(msg);
+    ASSERT_EQ(schema.modules.size(), 1u);
+    ASSERT_EQ(schema.modules[0].signals.size(), 1u);
+    EXPECT_TRUE(schema.modules[0].signals[0].writable);
 }
 
 TEST(SchemaParser, EmptyModules) {

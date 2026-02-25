@@ -19,6 +19,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace daedalus {
 
@@ -49,6 +51,8 @@ class App {
     void render_plot_workspace();
     void render_topology();
     void render_console();
+    void rebuild_writable_signals();
+    void send_set_signal(const std::string &signal, double value);
     void clear_introspection_state();
 
     /// Handle a parsed JSON event from the event queue.
@@ -81,6 +85,8 @@ class App {
     std::optional<bool> tree_open_state_request_;
     SignalViewMode signal_view_mode_ = SignalViewMode::Tree;
     char signal_filter_[128] = {};
+    std::unordered_set<std::string> writable_signal_paths_;
+    std::unordered_map<std::string, double> writable_signal_drafts_;
 };
 
 } // namespace daedalus

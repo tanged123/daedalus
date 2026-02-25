@@ -3,10 +3,12 @@
 #include "daedalus/views/plotter.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 namespace daedalus::views {
@@ -33,6 +35,33 @@ std::string signal_unit_or_empty(const std::vector<std::string> &subscribed_sign
         return "";
     }
     return unit_it->second;
+}
+
+bool contains_case_insensitive(std::string_view haystack, std::string_view needle) {
+    if (needle.empty()) {
+        return true;
+    }
+    if (haystack.size() < needle.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
+        bool match = true;
+        for (size_t j = 0; j < needle.size(); ++j) {
+            const char hc =
+                static_cast<char>(std::tolower(static_cast<unsigned char>(haystack[i + j])));
+            const char nc = static_cast<char>(std::tolower(static_cast<unsigned char>(needle[j])));
+            if (hc != nc) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace
@@ -83,8 +112,10 @@ void SignalInspector::render(const std::vector<std::string> &subscribed_signals,
 
             const std::string &path = subscribed_signals[idx];
             const auto buf_it = signal_buffers.find(idx);
+            const bool is_writable = is_writable_callback_ && is_writable_callback_(path);
 
             ImGui::TableNextRow();
+            ImGui::PushID(static_cast<int>(idx));
 
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(path.c_str());
@@ -96,6 +127,40 @@ void SignalInspector::render(const std::vector<std::string> &subscribed_signals,
                 ImGui::SetDragDropPayload(kDndSignalPayloadType, &payload, sizeof(payload));
                 ImGui::TextUnformatted(path.c_str());
                 ImGui::EndDragDropSource();
+            }
+            if (is_writable && ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Writable signal. Right-click to set value.");
+            }
+            if (is_writable && ImGui::BeginPopupContextItem("set_writable_signal")) {
+                double initial_value = 0.0;
+                if (buf_it != signal_buffers.end() && !buf_it->second.empty()) {
+                    initial_value = buf_it->second.last_value();
+                }
+                auto [value_it, inserted] = writable_value_cache_.try_emplace(path, initial_value);
+                if (inserted) {
+                    value_it->second = initial_value;
+                }
+
+                ImGui::TextUnformatted(path.c_str());
+                ImGui::SetNextItemWidth(170.0f);
+                ImGui::InputDouble("Value", &value_it->second, 0.1, 1.0, "%.6f");
+
+                ImGui::BeginDisabled(!set_signal_callback_);
+                if (ImGui::SmallButton("Set")) {
+                    set_signal_callback_(path, value_it->second);
+                    ImGui::CloseCurrentPopup();
+                }
+                if (contains_case_insensitive(path, "throttle")) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Set 1.0")) {
+                        value_it->second = 1.0;
+                        set_signal_callback_(path, 1.0);
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndDisabled();
+
+                ImGui::EndPopup();
             }
 
             ImGui::TableNextColumn();
@@ -119,10 +184,20 @@ void SignalInspector::render(const std::vector<std::string> &subscribed_signals,
             } else {
                 ImGui::TextDisabled("--");
             }
+
+            ImGui::PopID();
         }
     }
 
     ImGui::EndTable();
+}
+
+void SignalInspector::set_is_writable_callback(IsWritableCallback callback) {
+    is_writable_callback_ = std::move(callback);
+}
+
+void SignalInspector::set_set_signal_callback(SetSignalCallback callback) {
+    set_signal_callback_ = std::move(callback);
 }
 
 void SignalInspector::reset() {
@@ -130,6 +205,7 @@ void SignalInspector::reset() {
     sort_column_ = InspectorSortColumn::Signal;
     sort_ascending_ = true;
     sorted_indices_.clear();
+    writable_value_cache_.clear();
 }
 
 void SignalInspector::set_sort(InspectorSortColumn sort_column, bool ascending) {

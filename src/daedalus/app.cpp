@@ -83,6 +83,12 @@ int App::run(int /*argc*/, char * /*argv*/[]) {
             }
             return it->second;
         });
+    signal_inspector_.set_is_writable_callback([this](const std::string &signal_path) {
+        return writable_signal_paths_.find(signal_path) != writable_signal_paths_.end();
+    });
+    signal_inspector_.set_set_signal_callback([this](const std::string &signal_path, double value) {
+        send_set_signal(signal_path, value);
+    });
     console_view_.set_replay_callback(
         [this](const std::string &action, const nlohmann::json &params) {
             if (action.empty()) {
@@ -266,6 +272,7 @@ void App::handle_event(const std::string &json_str) {
         if (type == "schema") {
             current_schema_ = protocol::parse_schema(msg);
             signal_tree_.build_from_schema(current_schema_);
+            rebuild_writable_signals();
             signal_units_.clear();
             for (const auto &module : current_schema_.modules) {
                 for (const auto &signal : module.signals) {
@@ -362,10 +369,14 @@ void App::handle_event(const std::string &json_str) {
                 plot_manager_.clear_panel_signals();
                 signal_inspector_.reset();
                 topology_view_.reset();
+                writable_signal_paths_.clear();
+                writable_signal_drafts_.clear();
                 clear_introspection_state();
             } else if (event == "error") {
                 playback_state_.connected = false;
                 playback_state_.reset();
+                writable_signal_paths_.clear();
+                writable_signal_drafts_.clear();
                 clear_introspection_state();
             }
         }
@@ -562,6 +573,44 @@ void App::render_signal_tree_node(const data::SignalTreeNode &node, std::string_
                 ImGui::TextDisabled("%.4f", it->second.last_value());
             }
         }
+
+        if (writable_signal_paths_.find(node.full_path) != writable_signal_paths_.end() &&
+            ImGui::BeginPopupContextItem("set_writable_signal")) {
+            double initial_value = 0.0;
+            if (node.signal_index.has_value()) {
+                const auto buffer_it = signal_buffers_.find(node.signal_index.value());
+                if (buffer_it != signal_buffers_.end() && !buffer_it->second.empty()) {
+                    initial_value = buffer_it->second.last_value();
+                }
+            }
+            auto [value_it, inserted] =
+                writable_signal_drafts_.try_emplace(node.full_path, initial_value);
+            if (inserted) {
+                value_it->second = initial_value;
+            }
+
+            ImGui::TextUnformatted(node.full_path.c_str());
+            ImGui::SetNextItemWidth(170.0f);
+            ImGui::InputDouble("Value", &value_it->second, 0.1, 1.0, "%.6f");
+            if (ImGui::SmallButton("Set")) {
+                send_set_signal(node.full_path, value_it->second);
+                ImGui::CloseCurrentPopup();
+            }
+            const std::string lowered_path = to_lower_ascii(node.full_path);
+            if (lowered_path.find("throttle") != std::string::npos) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Set 1.0")) {
+                    value_it->second = 1.0;
+                    send_set_signal(node.full_path, 1.0);
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::EndPopup();
+        }
+        if (writable_signal_paths_.find(node.full_path) != writable_signal_paths_.end() &&
+            ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Writable signal. Right-click to set value.");
+        }
     } else {
         // Internal node: expandable tree
         if (tree_open_state_request_.has_value()) {
@@ -655,6 +704,40 @@ void App::clear_introspection_state() {
     introspection_execution_order_.clear();
     introspection_summary_ = nlohmann::json::object();
     introspection_available_ = false;
+}
+
+void App::rebuild_writable_signals() {
+    writable_signal_paths_.clear();
+    writable_signal_drafts_.clear();
+
+    for (const auto &module : current_schema_.modules) {
+        for (const auto &signal : module.signals) {
+            if (!signal.writable) {
+                continue;
+            }
+            writable_signal_paths_.insert(module.name + "." + signal.name);
+        }
+    }
+}
+
+void App::send_set_signal(const std::string &signal, double value) {
+    if (signal.empty()) {
+        return;
+    }
+    if (client_ == nullptr || !playback_state_.connected ||
+        client_->state() != protocol::ConnectionState::Connected) {
+        nlohmann::json detail = {
+            {"signal", signal},
+            {"value", value},
+            {"reason", "not connected"},
+        };
+        console_log_.add(views::ConsoleEntryType::System, "Set skipped: not connected",
+                         detail.dump(), playback_state_.last_sim_time);
+        return;
+    }
+
+    client_->set_signal(signal, value);
+    console_log_.add_command("set", {{"signal", signal}, {"value", value}});
 }
 
 void App::render_console() { console_view_.render(console_log_); }

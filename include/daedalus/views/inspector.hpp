@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -21,9 +22,14 @@ enum class InspectorSortColumn {
 /// Renders a searchable table of current signal values.
 class SignalInspector {
   public:
+    using IsWritableCallback = std::function<bool(const std::string &)>;
+    using SetSignalCallback = std::function<void(const std::string &, double)>;
+
     void render(const std::vector<std::string> &subscribed_signals,
                 const std::map<size_t, data::SignalBuffer> &signal_buffers,
                 const std::unordered_map<std::string, std::string> &signal_units);
+    void set_is_writable_callback(IsWritableCallback callback);
+    void set_set_signal_callback(SetSignalCallback callback);
 
     void reset();
 
@@ -44,8 +50,11 @@ class SignalInspector {
     ImGuiTextFilter text_filter_;
     InspectorSortColumn sort_column_ = InspectorSortColumn::Signal;
     bool sort_ascending_ = true;
+    IsWritableCallback is_writable_callback_;
+    SetSignalCallback set_signal_callback_;
 
     std::vector<size_t> sorted_indices_;
+    std::unordered_map<std::string, double> writable_value_cache_;
 };
 
 } // namespace daedalus::views

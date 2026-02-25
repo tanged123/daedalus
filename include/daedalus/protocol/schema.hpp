@@ -12,6 +12,7 @@ struct SignalInfo {
     std::string name;
     std::string type;
     std::optional<std::string> unit;
+    bool writable = false;
 };
 
 struct ModuleInfo {

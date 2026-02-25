@@ -129,6 +129,9 @@ Schema parse_schema(const nlohmann::json &msg) {
             if (sig_json.contains("unit") && sig_json["unit"].is_string()) {
                 sig.unit = sig_json["unit"].get<std::string>();
             }
+            if (sig_json.contains("writable") && sig_json["writable"].is_boolean()) {
+                sig.writable = sig_json["writable"].get<bool>();
+            }
 
             mod.signals.push_back(std::move(sig));
         }
