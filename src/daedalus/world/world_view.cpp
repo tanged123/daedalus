@@ -28,6 +28,7 @@ constexpr double kMaxPlausibleEcefNormM = kEarthRadiusM * 20.0;
 constexpr double kLatRadPlausibility = glm::pi<double>() * 1.2;
 constexpr double kLonRadPlausibility = glm::two_pi<double>() * 1.2;
 constexpr double kDegToRad = glm::pi<double>() / 180.0;
+constexpr double kRadToDeg = 180.0 / glm::pi<double>();
 constexpr float kOrbitMinDistanceER = 1.05f;
 constexpr float kOrbitMaxDistanceER = 30.0f;
 constexpr float kFollowMinDistanceER = 0.00002f; // ~128 m
@@ -69,9 +70,10 @@ find_signal_by_suffix(const std::vector<std::string> &lowered_signals,
     return best_index;
 }
 
-[[nodiscard]] std::string format_xyz(const glm::vec3 &v) {
-    char buf[128];
-    std::snprintf(buf, sizeof(buf), "[%.3f, %.3f, %.3f]", v.x, v.y, v.z);
+[[nodiscard]] std::string format_lla(const coord::Lla &lla) {
+    char buf[192];
+    std::snprintf(buf, sizeof(buf), "lat=%+.6f deg, lon=%+.6f deg, alt=%.2f m",
+                  lla.lat_rad * kRadToDeg, lla.lon_rad * kRadToDeg, lla.alt_hae_m);
     return std::string(buf);
 }
 
@@ -195,8 +197,8 @@ void WorldView::update(const std::map<size_t, data::SignalBuffer> &signal_buffer
     vehicle_model_ = make_vehicle_model(pose.value());
     vehicle_position_unit_ = glm::vec3(pose->position_ecef_m / kEarthRadiusM);
     vehicle_visible_ = true;
-    vehicle_status_ =
-        std::string("Vehicle visible at ") + format_xyz(vehicle_position_unit_) + " Earth radii";
+    const coord::Lla vehicle_lla = coord::ecef_to_lla(pose->position_ecef_m);
+    vehicle_status_ = std::string("Vehicle visible at ") + format_lla(vehicle_lla);
     if (lla_was_degrees) {
         vehicle_status_ += " (LLA interpreted as degrees)";
     }
