@@ -128,10 +128,15 @@ void SignalInspector::render(const std::vector<std::string> &subscribed_signals,
                 ImGui::TextUnformatted(path.c_str());
                 ImGui::EndDragDropSource();
             }
-            if (is_writable && ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Writable signal. Right-click to set value.");
+            const bool path_item_hovered = ImGui::IsItemHovered();
+            if (is_writable && path_item_hovered &&
+                ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                ImGui::OpenPopup("set_writable_signal");
             }
-            if (is_writable && ImGui::BeginPopupContextItem("set_writable_signal")) {
+            if (is_writable && path_item_hovered) {
+                ImGui::SetTooltip("Writable signal. Double-click to set value.");
+            }
+            if (is_writable && ImGui::BeginPopup("set_writable_signal")) {
                 double initial_value = 0.0;
                 if (buf_it != signal_buffers.end() && !buf_it->second.empty()) {
                     initial_value = buf_it->second.last_value();
