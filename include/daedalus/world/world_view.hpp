@@ -68,7 +68,7 @@ class WorldView {
     glm::mat4 vehicle_model_{1.0f};
     glm::vec3 vehicle_position_unit_{0.0f, 0.0f, 0.0f};
     bool vehicle_visible_ = false;
-    bool follow_vehicle_camera_ = true;
+    bool follow_vehicle_camera_ = false;
     bool show_vehicle_debug_ = true;
     std::string vehicle_status_ = "No pose data";
 };

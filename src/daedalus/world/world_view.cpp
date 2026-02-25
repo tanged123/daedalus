@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 
+#include <glm/ext/scalar_constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -21,6 +22,11 @@ namespace daedalus::world {
 namespace {
 
 constexpr double kEarthRadiusM = 6378137.0;
+constexpr double kMinPlausibleEcefNormM = kEarthRadiusM * 0.5;
+constexpr double kMaxPlausibleEcefNormM = kEarthRadiusM * 20.0;
+constexpr double kLatRadPlausibility = glm::pi<double>() * 1.2;
+constexpr double kLonRadPlausibility = glm::two_pi<double>() * 1.2;
+constexpr double kDegToRad = glm::pi<double>() / 180.0;
 constexpr float kOrbitMinDistanceER = 1.05f;
 constexpr float kOrbitMaxDistanceER = 30.0f;
 constexpr float kFollowMinDistanceER = 0.00002f; // ~128 m
@@ -117,15 +123,33 @@ void WorldView::update(const std::map<size_t, data::SignalBuffer> &signal_buffer
     const auto x_ecef = latest_signal_value(signal_buffers, signal_slots_.ecef_x);
     const auto y_ecef = latest_signal_value(signal_buffers, signal_slots_.ecef_y);
     const auto z_ecef = latest_signal_value(signal_buffers, signal_slots_.ecef_z);
+    bool raw_ecef_present = false;
     if (x_ecef.has_value() && y_ecef.has_value() && z_ecef.has_value()) {
+        raw_ecef_present = true;
         input.position_ecef_m = glm::dvec3(x_ecef.value(), y_ecef.value(), z_ecef.value());
     }
 
     const auto lat = latest_signal_value(signal_buffers, signal_slots_.lat);
     const auto lon = latest_signal_value(signal_buffers, signal_slots_.lon);
     const auto alt = latest_signal_value(signal_buffers, signal_slots_.alt);
+    bool lla_was_degrees = false;
     if (lat.has_value() && lon.has_value() && alt.has_value()) {
-        input.position_lla = coord::Lla{lat.value(), lon.value(), alt.value()};
+        double lat_rad = lat.value();
+        double lon_rad = lon.value();
+        if (std::abs(lat_rad) > kLatRadPlausibility || std::abs(lon_rad) > kLonRadPlausibility) {
+            lat_rad *= kDegToRad;
+            lon_rad *= kDegToRad;
+            lla_was_degrees = true;
+        }
+        input.position_lla = coord::Lla{lat_rad, lon_rad, alt.value()};
+    }
+
+    // Avoid binding to local xyz-style signals when searching for ECEF aliases.
+    if (raw_ecef_present && !input.position_lla.has_value()) {
+        const double norm = glm::length(input.position_ecef_m.value());
+        if (norm < kMinPlausibleEcefNormM || norm > kMaxPlausibleEcefNormM) {
+            input.position_ecef_m.reset();
+        }
     }
 
     const auto q_be_w = latest_signal_value(signal_buffers, signal_slots_.q_be_w);
@@ -157,8 +181,13 @@ void WorldView::update(const std::map<size_t, data::SignalBuffer> &signal_buffer
     const std::optional<VehiclePose> pose = solve_vehicle_pose(input);
     if (!pose.has_value()) {
         vehicle_visible_ = false;
-        vehicle_status_ =
-            "Vehicle hidden: no position signals (need position_lla.* or position_ecef.*)";
+        if (raw_ecef_present && !input.position_ecef_m.has_value()) {
+            vehicle_status_ =
+                "Vehicle hidden: matched ECEF-like signals but values are not geodetic";
+        } else {
+            vehicle_status_ =
+                "Vehicle hidden: no position signals (need position_lla.* or position_ecef.*)";
+        }
         return;
     }
 
@@ -167,6 +196,9 @@ void WorldView::update(const std::map<size_t, data::SignalBuffer> &signal_buffer
     vehicle_visible_ = true;
     vehicle_status_ =
         std::string("Vehicle visible at ") + format_xyz(vehicle_position_unit_) + " Earth radii";
+    if (lla_was_degrees) {
+        vehicle_status_ += " (LLA interpreted as degrees)";
+    }
 }
 
 void WorldView::handle_input() {
@@ -349,8 +381,8 @@ glm::mat4 WorldView::make_vehicle_model(const VehiclePose &pose) const {
     glm::dmat4 model = compose_model_matrix_ecef(pose);
     model[3] = glm::dvec4(pose.position_ecef_m / kEarthRadiusM, 1.0);
 
-    const double distance = std::max(1.0, static_cast<double>(camera_.distance_earth_radii));
-    const double scale = std::clamp(0.012 * distance, 0.012, 0.08);
+    const double distance = std::max(1e-6, static_cast<double>(camera_.distance_earth_radii));
+    const double scale = std::clamp(0.00008 * distance, 0.0000035, 0.0012);
     model = model * glm::scale(glm::dmat4(1.0), glm::dvec3(scale));
     return glm::mat4(model);
 }
