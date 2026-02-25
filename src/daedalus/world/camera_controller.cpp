@@ -20,15 +20,26 @@ void CameraController::handle_scroll(float delta) {
 }
 
 glm::mat4 CameraController::view_matrix() const {
+    return view_matrix(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+}
+
+glm::mat4 CameraController::view_matrix(const glm::vec3 &target, const glm::vec3 &up_hint) const {
     const float az = glm::radians(azimuth_deg);
     const float el = glm::radians(elevation_deg);
 
     const float cos_el = std::cos(el);
-    const glm::vec3 eye(distance_earth_radii * cos_el * std::cos(az),
-                        distance_earth_radii * cos_el * std::sin(az),
-                        distance_earth_radii * std::sin(el));
+    const glm::vec3 offset(distance_earth_radii * cos_el * std::cos(az),
+                           distance_earth_radii * cos_el * std::sin(az),
+                           distance_earth_radii * std::sin(el));
+    const glm::vec3 eye = target + offset;
+    glm::vec3 up = up_hint;
+    if (glm::dot(up, up) < 1e-12f) {
+        up = glm::vec3(0.0f, 0.0f, 1.0f);
+    } else {
+        up = glm::normalize(up);
+    }
 
-    return glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    return glm::lookAt(eye, target, up);
 }
 
 glm::mat4 CameraController::proj_matrix(float aspect) const {

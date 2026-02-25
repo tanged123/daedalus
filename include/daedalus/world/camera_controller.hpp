@@ -10,6 +10,7 @@ class CameraController {
     void handle_scroll(float delta);
 
     [[nodiscard]] glm::mat4 view_matrix() const;
+    [[nodiscard]] glm::mat4 view_matrix(const glm::vec3 &target, const glm::vec3 &up_hint) const;
     [[nodiscard]] glm::mat4 proj_matrix(float aspect) const;
     [[nodiscard]] glm::dvec3 ecef_position() const;
 

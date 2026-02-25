@@ -55,6 +55,7 @@ class WorldView {
     [[nodiscard]] static std::optional<double>
     latest_signal_value(const std::map<size_t, data::SignalBuffer> &signal_buffers,
                         const std::optional<size_t> &index);
+    [[nodiscard]] std::string describe_signal(const std::optional<size_t> &index) const;
     [[nodiscard]] glm::mat4 make_vehicle_model(const VehiclePose &pose) const;
 
     bool initialized_ = false;
@@ -65,7 +66,11 @@ class WorldView {
     SignalSlots signal_slots_;
     std::vector<std::string> subscribed_signals_cache_;
     glm::mat4 vehicle_model_{1.0f};
+    glm::vec3 vehicle_position_unit_{0.0f, 0.0f, 0.0f};
     bool vehicle_visible_ = false;
+    bool follow_vehicle_camera_ = true;
+    bool show_vehicle_debug_ = true;
+    std::string vehicle_status_ = "No pose data";
 };
 
 } // namespace daedalus::world
