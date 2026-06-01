@@ -13,15 +13,15 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
     # Hermes orchestration platform (provides protocol definitions)
-    hermes.url = "github:tanged123/hermes";
+    hermes.url = "github:tanged123/hermes/0.3.3";
 
     # Math/coordinate dependencies used by Vulcan
-    janus = {
-      url = "github:tanged123/janus";
+    metis = {
+      url = "github:tanged123/metis/2.0.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     vulcan = {
-      url = "github:tanged123/vulcan";
+      url = "github:tanged123/vulcan/0.4.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -36,7 +36,7 @@
       flake-utils,
       treefmt-nix,
       hermes,
-      janus,
+      metis,
       vulcan,
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -44,7 +44,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stdenv = pkgs.llvmPackages_latest.stdenv;
-        janusPackage = janus.packages.${system}.default;
+        metisPackage = metis.packages.${system}.default;
         vulcanPackage = vulcan.packages.${system}.default;
 
         # ImGui Bundle — custom derivation (not in nixpkgs)
@@ -147,7 +147,7 @@
 
           buildInputs = [
             imgui-bundle
-            janusPackage
+            metisPackage
             vulcanPackage
             # Windowing / OpenGL (needed at link time)
             pkgs.glfw
@@ -191,7 +191,7 @@
           packages = [
             imgui-bundle
             hermes.packages.${system}.hermes
-            janusPackage
+            metisPackage
             vulcanPackage
           ]
           ++ (with pkgs; [
@@ -237,7 +237,7 @@
 
           shellHook = ''
             # Propagate cmake paths so find_package() can resolve flake inputs.
-            export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH:${janusPackage}:${vulcanPackage}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            export CMAKE_PREFIX_PATH="$NIXPKGS_CMAKE_PREFIX_PATH:${metisPackage}:${vulcanPackage}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
             # GLFW's Wayland backend dlopens these at runtime, so expose them explicitly.
             export LD_LIBRARY_PATH="${
               pkgs.lib.makeLibraryPath [

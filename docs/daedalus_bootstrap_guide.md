@@ -113,7 +113,7 @@ The connection may drop due to simulation restart, network interruption, or serv
 
 ## 3. Pantheon Conventions
 
-All repositories in the Pantheon (Janus, Vulcan, Icarus, Hermes, Daedalus) share a common infrastructure pattern. This section documents what is shared and what is project-specific.
+All repositories in the Pantheon (Metis, Vulcan, Icarus, Hermes, Daedalus) share a common infrastructure pattern. This section documents what is shared and what is project-specific.
 
 ### Shared Across All Repos
 
@@ -172,7 +172,7 @@ steps:
 | Test framework | GoogleTest | pytest | GoogleTest |
 | Version source | CMakeLists.txt | pyproject.toml | CMakeLists.txt |
 | Nix stdenv | llvmPackages_latest | default | llvmPackages_latest |
-| Nix inputs (deps) | janus, vulcan | icarus | hermes |
+| Nix inputs (deps) | metis, vulcan | icarus | hermes |
 
 ---
 
@@ -256,7 +256,7 @@ daedalus/
 Daedalus follows the Pantheon dependency chain:
 
 ```
-daedalus → hermes → icarus → {janus, vulcan, nixpkgs}
+daedalus → hermes → icarus → {metis, vulcan, nixpkgs}
 ```
 
 The `flake.nix` declares:

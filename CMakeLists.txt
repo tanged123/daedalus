@@ -57,7 +57,7 @@ find_package(Eigen3 REQUIRED)
 find_package(casadi REQUIRED)
 find_package(HighFive REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(janus REQUIRED)
+find_package(metis REQUIRED)
 find_package(vulcan REQUIRED)
 
 # =============================================================================

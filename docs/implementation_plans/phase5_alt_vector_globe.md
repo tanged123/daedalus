@@ -735,13 +735,13 @@ Plus a small "V" chevron in the 2D screen space drawn via `ImGui::GetWindowDrawL
 ### Phase 5b Deliverables
 
 - [ ] Nix fetchurl derivation for `ne_50m_coastline.geojson`
-- [x] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
-- [x] `VehicleRenderer` with body-axis lines and diamond marker
-- [x] Pose solver with ECEF-first contract (ECEF/LLA + quaternion/Euler fallbacks)
-- [x] Vehicle position from signal buffers (LLA/ECEF → ECEF → RTE model matrix)
-- [x] Dynamic scale based on camera distance
-- [x] Graceful degradation when position signals absent (globe shown, no vehicle)
-- [x] Unit tests: coastline vertex parsing, vehicle pose matrix from all supported input forms
+- [ ] `load_coastlines()` via nlohmann_json → CPU-tessellated VBO upload
+- [ ] `VehicleRenderer` with body-axis lines and diamond marker
+- [ ] Pose solver with ECEF-first contract (ECEF/LLA + quaternion/Euler fallbacks)
+- [ ] Vehicle position from signal buffers (LLA/ECEF → ECEF → RTE model matrix)
+- [ ] Dynamic scale based on camera distance
+- [ ] Graceful degradation when position signals absent (globe shown, no vehicle)
+- [ ] Unit tests: coastline vertex parsing, vehicle pose matrix from all supported input forms
 
 **Estimated LOC**: ~400–600 C++
 
@@ -1112,7 +1112,7 @@ Validation requirements:
 Backend requirement:
 
 - Coordinate transforms must route through Vulcan APIs (no duplicate geodesy/frame formulas in Daedalus).
-- Adapter layer owns only type conversion (`vulcan::Vec3<double>` / Janus quaternion <-> `glm`) and RTE helpers.
+- Adapter layer owns only type conversion (`vulcan::Vec3<double>` / Metis quaternion <-> `glm`) and RTE helpers.
 
 ---
 
@@ -1150,7 +1150,7 @@ Backend requirement:
 | **Dependency footprint** | Very large | Very large | External binary | **Medium-low (Vulcan + header-only decode, no GIS engine)** |
 | **Build time** | Weeks to stabilize | Weeks to stabilize | Zero | **Minutes** |
 | **License** | Apache 2.0 | LGPL-3.0 | GPL-2.0 | **Apache 2.0 + MIT deps** |
-| **Debugging** | Complex (engine internals) | Complex (OSG) | Opaque | **Transparent** |
+| **Debugging** | Complex (engine internals) | Complex (OSG) | Opaque | **Trans parent** |
 
 ---
 
@@ -1166,7 +1166,7 @@ Backend requirement:
 | **stb_image** (header-only) | bundled | Terrarium PNG decode | 5d |
 | **Terrarium DEM tiles** | AWS Open Data `elevation-tiles-prod` | Terrain height sampling + mesh | 5d |
 
-`nlohmann_json` (already present) continues to load coastline GeoJSON and settings. `janus` comes transitively with Vulcan.
+`nlohmann_json` (already present) continues to load coastline GeoJSON and settings. `metis` comes transitively with Vulcan.
 
 ### What We Use from Existing Stack
 
